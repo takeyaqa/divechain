@@ -8,7 +8,7 @@ The first backend is macOS Keychain, implemented with [`security-framework`](htt
 
 ```console
 $ cargo run -- -s aws AWS_ACCESS_KEY_ID
-aws.AWS_ACCESS_KEY_ID:
+aws.AWS_ACCESS_KEY_ID: 
 ```
 
 `-s` / `--set` creates or updates a generic password item in the default user keychain.
