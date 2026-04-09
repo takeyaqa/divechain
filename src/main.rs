@@ -1,68 +1,68 @@
-use std::env;
-use std::ffi::OsString;
 use std::io::{self, IsTerminal, Read, Write};
 use std::process;
 
+use clap::{ArgAction, CommandFactory, Parser, error::ErrorKind};
 use divechain::{KeychainStore, Result};
 
-const USAGE: &str = "\
-Usage:
-  divechain --set <namespace> <ENV>
-";
+#[derive(Debug, Parser)]
+#[command(
+    arg_required_else_help = true,
+    override_usage = "divechain -s|--set <namespace> <ENV>"
+)]
+struct Cli {
+    #[arg(short = 's', long, action = ArgAction::SetTrue)]
+    set: bool,
+    #[arg(value_name = "namespace", requires = "set")]
+    namespace: Option<String>,
+    #[arg(value_name = "ENV", requires = "set")]
+    env_name: Option<String>,
+}
+
+impl Cli {
+    fn parse_from_args<I, T>(args: I) -> clap::error::Result<Self>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<std::ffi::OsString> + Clone,
+    {
+        let cli = Self::try_parse_from(args)?;
+        cli.validate()
+    }
+
+    fn validate(self) -> clap::error::Result<Self> {
+        if self.set && (self.namespace.is_none() || self.env_name.is_none()) {
+            let mut command = Self::command();
+            return Err(command.error(
+                ErrorKind::MissingRequiredArgument,
+                "the following required arguments were not provided:\n  <namespace>\n  <ENV>",
+            ));
+        }
+
+        Ok(self)
+    }
+}
 
 fn main() {
-    if let Err(error) = run(env::args_os()) {
+    let cli = match Cli::parse_from_args(std::env::args_os()) {
+        Ok(cli) => cli,
+        Err(error) => error.exit(),
+    };
+
+    if let Err(error) = run(cli) {
         eprintln!("error: {error}");
         process::exit(1);
     }
 }
 
-fn run(args: impl IntoIterator<Item = OsString>) -> Result<()> {
-    let mut args = args.into_iter();
-    let _binary = args.next();
-
-    let Some(option) = args.next() else {
-        print!("{USAGE}");
-        return Ok(());
-    };
-
+fn run(cli: Cli) -> Result<()> {
     let store = KeychainStore::new();
 
-    match option.to_string_lossy().as_ref() {
-        "--set" => {
-            let (namespace, env_name) = take_two(args)?;
-            let secret = read_secret(&namespace, &env_name)?;
-            store.save_generic_password(&namespace, &env_name, secret.as_bytes())
-        }
-        "help" | "--help" | "-h" => {
-            print!("{USAGE}");
-            Ok(())
-        }
-        _ => {
-            eprintln!("{USAGE}");
-            process::exit(2);
-        }
+    if cli.set {
+        let namespace = cli.namespace.as_deref().expect("validated by clap");
+        let env_name = cli.env_name.as_deref().expect("validated by clap");
+        let secret = read_secret(namespace, env_name)?;
+        return store.save_generic_password(namespace, env_name, secret.as_bytes());
     }
-}
 
-fn take_two(mut args: impl Iterator<Item = OsString>) -> Result<(String, String)> {
-    let namespace = next_required(&mut args, "<namespace>")?;
-    let env_name = next_required(&mut args, "<ENV>")?;
-    reject_extra(args)?;
-    Ok((namespace, env_name))
-}
-
-fn next_required(args: &mut impl Iterator<Item = OsString>, name: &'static str) -> Result<String> {
-    match args.next() {
-        Some(value) => Ok(value.to_string_lossy().into_owned()),
-        None => Err(usage_error(name)),
-    }
-}
-
-fn reject_extra(mut args: impl Iterator<Item = OsString>) -> Result<()> {
-    if args.next().is_some() {
-        return Err(usage_error("too many arguments"));
-    }
     Ok(())
 }
 
@@ -90,16 +90,66 @@ fn trim_trailing_newline(mut value: String) -> String {
     value
 }
 
-fn usage_error(detail: &'static str) -> divechain::KeychainError {
-    divechain::KeychainError::Io(io::Error::new(
-        io::ErrorKind::InvalidInput,
-        format!("{detail}\n\n{USAGE}"),
-    ))
-}
-
 #[cfg(test)]
 mod tests {
-    use super::trim_trailing_newline;
+    use clap::{CommandFactory, error::ErrorKind};
+
+    use super::{Cli, trim_trailing_newline};
+
+    #[test]
+    fn parses_set_invocation() {
+        let cli = Cli::parse_from_args(["divechain", "--set", "aws", "AWS_ACCESS_KEY_ID"])
+            .expect("set invocation should parse");
+
+        assert!(cli.set);
+        assert_eq!(cli.namespace.as_deref(), Some("aws"));
+        assert_eq!(cli.env_name.as_deref(), Some("AWS_ACCESS_KEY_ID"));
+    }
+
+    #[test]
+    fn parses_short_set_invocation() {
+        let cli = Cli::parse_from_args(["divechain", "-s", "aws", "AWS_ACCESS_KEY_ID"])
+            .expect("short set invocation should parse");
+
+        assert!(cli.set);
+        assert_eq!(cli.namespace.as_deref(), Some("aws"));
+        assert_eq!(cli.env_name.as_deref(), Some("AWS_ACCESS_KEY_ID"));
+    }
+
+    #[test]
+    fn rejects_empty_invocation() {
+        let error =
+            Cli::parse_from_args(["divechain"]).expect_err("empty invocation should not parse");
+
+        assert!(matches!(
+            error.kind(),
+            ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+                | ErrorKind::MissingRequiredArgument
+        ));
+    }
+
+    #[test]
+    fn rejects_missing_env_for_set() {
+        let error = Cli::parse_from_args(["divechain", "--set", "aws"])
+            .expect_err("missing ENV should not parse");
+
+        assert_eq!(error.kind(), ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn rejects_positional_args_without_set() {
+        let error = Cli::parse_from_args(["divechain", "aws", "AWS_ACCESS_KEY_ID"])
+            .expect_err("positional args without --set should not parse");
+
+        assert_eq!(error.kind(), ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn help_includes_set_usage() {
+        let help = Cli::command().render_help().to_string();
+
+        assert!(help.contains("divechain -s|--set <namespace> <ENV>"));
+    }
 
     #[test]
     fn trims_single_newline() {
