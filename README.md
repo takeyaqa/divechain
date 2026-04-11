@@ -7,21 +7,21 @@ The first backend is macOS Keychain, implemented with [`security-framework`](htt
 ## Usage
 
 ```console
-$ cargo run -- -s aws AWS_ACCESS_KEY_ID
+$ cargo run -- set aws AWS_ACCESS_KEY_ID
 aws.AWS_ACCESS_KEY_ID: 
 ```
 
-`-s` / `--set` creates or updates a generic password item in the default user keychain.
+`set` creates or updates a generic password item in the default user keychain.
 When `namespace` is `aws`, the macOS Keychain service name is `divechain-aws`.
-The `ENV` argument is stored as the Keychain account attribute, so examples use uppercase environment-variable names.
+The `env` argument is stored as the Keychain account attribute, so examples use uppercase environment-variable names.
 When running in a TTY, the secret is read interactively without echo.
 
 You can also pipe the secret in non-interactive environments:
 
 ```console
-$ printf 'super-secret\n' | cargo run -- -s aws AWS_ACCESS_KEY_ID
+$ printf 'super-secret\n' | cargo run -- set aws AWS_ACCESS_KEY_ID
 ```
 
 ## Development
 
-The current implementation intentionally exposes only `-s` / `--set`. On macOS, the runtime CLI targets the default user keychain.
+The current implementation intentionally exposes only the `set` subcommand. On macOS, the runtime CLI targets the default user keychain.
