@@ -1,21 +1,27 @@
 use std::io::{self, IsTerminal, Read, Write};
 use std::process;
 
-use clap::{ArgAction, CommandFactory, Parser, error::ErrorKind};
+use clap::{Parser, Subcommand};
 use divechain::{KeychainStore, Result};
 
 #[derive(Debug, Parser)]
 #[command(
     arg_required_else_help = true,
-    override_usage = "divechain -s|--set <namespace> <ENV>"
+    override_usage = "divechain set <namespace> <env>"
 )]
 struct Cli {
-    #[arg(short = 's', long, action = ArgAction::SetTrue)]
-    set: bool,
-    #[arg(value_name = "namespace", requires = "set")]
-    namespace: Option<String>,
-    #[arg(value_name = "ENV", requires = "set")]
-    env_name: Option<String>,
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Debug, Subcommand)]
+enum Commands {
+    Set {
+        #[arg(value_name = "namespace")]
+        namespace: String,
+        #[arg(value_name = "env")]
+        env_name: String,
+    },
 }
 
 impl Cli {
@@ -24,20 +30,7 @@ impl Cli {
         I: IntoIterator<Item = T>,
         T: Into<std::ffi::OsString> + Clone,
     {
-        let cli = Self::try_parse_from(args)?;
-        cli.validate()
-    }
-
-    fn validate(self) -> clap::error::Result<Self> {
-        if self.set && (self.namespace.is_none() || self.env_name.is_none()) {
-            let mut command = Self::command();
-            return Err(command.error(
-                ErrorKind::MissingRequiredArgument,
-                "the following required arguments were not provided:\n  <namespace>\n  <ENV>",
-            ));
-        }
-
-        Ok(self)
+        Self::try_parse_from(args)
     }
 }
 
@@ -56,14 +49,15 @@ fn main() {
 fn run(cli: Cli) -> Result<()> {
     let store = KeychainStore::new();
 
-    if cli.set {
-        let namespace = cli.namespace.as_deref().expect("validated by clap");
-        let env_name = cli.env_name.as_deref().expect("validated by clap");
-        let secret = read_secret(namespace, env_name)?;
-        return store.save_generic_password(namespace, env_name, secret.as_bytes());
+    match cli.command {
+        Commands::Set {
+            namespace,
+            env_name,
+        } => {
+            let secret = read_secret(&namespace, &env_name)?;
+            store.save_generic_password(&namespace, &env_name, secret.as_bytes())
+        }
     }
-
-    Ok(())
 }
 
 fn read_secret(namespace: &str, env_name: &str) -> Result<String> {
@@ -94,26 +88,22 @@ fn trim_trailing_newline(mut value: String) -> String {
 mod tests {
     use clap::{CommandFactory, error::ErrorKind};
 
-    use super::{Cli, trim_trailing_newline};
+    use super::{Cli, Commands, trim_trailing_newline};
 
     #[test]
     fn parses_set_invocation() {
-        let cli = Cli::parse_from_args(["divechain", "--set", "aws", "AWS_ACCESS_KEY_ID"])
+        let cli = Cli::parse_from_args(["divechain", "set", "aws", "AWS_ACCESS_KEY_ID"])
             .expect("set invocation should parse");
 
-        assert!(cli.set);
-        assert_eq!(cli.namespace.as_deref(), Some("aws"));
-        assert_eq!(cli.env_name.as_deref(), Some("AWS_ACCESS_KEY_ID"));
-    }
-
-    #[test]
-    fn parses_short_set_invocation() {
-        let cli = Cli::parse_from_args(["divechain", "-s", "aws", "AWS_ACCESS_KEY_ID"])
-            .expect("short set invocation should parse");
-
-        assert!(cli.set);
-        assert_eq!(cli.namespace.as_deref(), Some("aws"));
-        assert_eq!(cli.env_name.as_deref(), Some("AWS_ACCESS_KEY_ID"));
+        match cli.command {
+            Commands::Set {
+                namespace,
+                env_name,
+            } => {
+                assert_eq!(namespace, "aws");
+                assert_eq!(env_name, "AWS_ACCESS_KEY_ID");
+            }
+        }
     }
 
     #[test]
@@ -130,8 +120,8 @@ mod tests {
 
     #[test]
     fn rejects_missing_env_for_set() {
-        let error = Cli::parse_from_args(["divechain", "--set", "aws"])
-            .expect_err("missing ENV should not parse");
+        let error = Cli::parse_from_args(["divechain", "set", "aws"])
+            .expect_err("missing env should not parse");
 
         assert_eq!(error.kind(), ErrorKind::MissingRequiredArgument);
     }
@@ -139,16 +129,32 @@ mod tests {
     #[test]
     fn rejects_positional_args_without_set() {
         let error = Cli::parse_from_args(["divechain", "aws", "AWS_ACCESS_KEY_ID"])
-            .expect_err("positional args without --set should not parse");
+            .expect_err("positional args without set should not parse");
 
-        assert_eq!(error.kind(), ErrorKind::MissingRequiredArgument);
+        assert_eq!(error.kind(), ErrorKind::InvalidSubcommand);
+    }
+
+    #[test]
+    fn rejects_long_set_flag() {
+        let error = Cli::parse_from_args(["divechain", "--set", "aws", "AWS_ACCESS_KEY_ID"])
+            .expect_err("legacy --set should not parse");
+
+        assert_eq!(error.kind(), ErrorKind::UnknownArgument);
+    }
+
+    #[test]
+    fn rejects_short_set_flag() {
+        let error = Cli::parse_from_args(["divechain", "-s", "aws", "AWS_ACCESS_KEY_ID"])
+            .expect_err("legacy -s should not parse");
+
+        assert_eq!(error.kind(), ErrorKind::UnknownArgument);
     }
 
     #[test]
     fn help_includes_set_usage() {
         let help = Cli::command().render_help().to_string();
 
-        assert!(help.contains("divechain -s|--set <namespace> <ENV>"));
+        assert!(help.contains("divechain set <namespace> <env>"));
     }
 
     #[test]
