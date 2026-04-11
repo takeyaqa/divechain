@@ -14,6 +14,7 @@ aws.AWS_ACCESS_KEY_ID:
 `set` creates or updates a generic password item in the default user keychain.
 When `namespace` is `aws`, the macOS Keychain service name is `divechain-aws`.
 The `env` argument is stored as the Keychain account attribute, so examples use uppercase environment-variable names.
+Saved macOS Keychain items also use the fixed Keychain label `divechain`.
 When running in a TTY, the secret is read interactively without echo.
 
 You can also pipe the secret in non-interactive environments:

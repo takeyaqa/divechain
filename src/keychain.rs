@@ -54,8 +54,13 @@ impl KeychainStore {
         Self
     }
 
-    pub fn save_generic_password(self, service: &str, env_name: &str, secret: &[u8]) -> Result<()> {
-        backend::save_generic_password(service, env_name, secret)
+    pub fn save_generic_password(
+        self,
+        namespace: &str,
+        env_name: &str,
+        secret: &[u8],
+    ) -> Result<()> {
+        backend::save_generic_password(namespace, env_name, secret)
     }
 }
 
@@ -66,11 +71,11 @@ mod backend {
     use super::Result;
 
     pub(super) fn save_generic_password(
-        service: &str,
+        namespace: &str,
         env_name: &str,
         secret: &[u8],
     ) -> Result<()> {
-        macos_keychain::save_generic_password(service, env_name, secret)
+        macos_keychain::save_generic_password(namespace, env_name, secret)
     }
 }
 
@@ -79,7 +84,7 @@ mod backend {
     use super::{KeychainError, Result};
 
     pub(super) fn save_generic_password(
-        _service: &str,
+        _namespace: &str,
         _env_name: &str,
         _secret: &[u8],
     ) -> Result<()> {
@@ -103,7 +108,7 @@ mod tests {
     #[test]
     fn backend_is_disabled_outside_macos() {
         let error = KeychainStore::new()
-            .save_generic_password("divechain-namespace", "ENV_NAME", b"secret")
+            .save_generic_password("namespace", "ENV_NAME", b"secret")
             .expect_err("non-mac targets should reject keychain access");
 
         match error {
