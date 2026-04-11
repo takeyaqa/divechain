@@ -4,6 +4,8 @@ use std::process;
 use clap::{Parser, Subcommand};
 use divechain::{KeychainStore, Result};
 
+const KEYCHAIN_SERVICE_PREFIX: &str = "divechain-";
+
 #[derive(Debug, Parser)]
 #[command(
     arg_required_else_help = true,
@@ -54,10 +56,15 @@ fn run(cli: Cli) -> Result<()> {
             namespace,
             env_name,
         } => {
+            let service = keychain_service_name(&namespace);
             let secret = read_secret(&namespace, &env_name)?;
-            store.save_generic_password(&namespace, &env_name, secret.as_bytes())
+            store.save_generic_password(&service, &env_name, secret.as_bytes())
         }
     }
+}
+
+fn keychain_service_name(namespace: &str) -> String {
+    format!("{KEYCHAIN_SERVICE_PREFIX}{namespace}")
 }
 
 fn read_secret(namespace: &str, env_name: &str) -> Result<String> {
@@ -88,7 +95,7 @@ fn trim_trailing_newline(mut value: String) -> String {
 mod tests {
     use clap::{CommandFactory, error::ErrorKind};
 
-    use super::{Cli, Commands, trim_trailing_newline};
+    use super::{Cli, Commands, keychain_service_name, trim_trailing_newline};
 
     #[test]
     fn parses_set_invocation() {
@@ -173,5 +180,10 @@ mod tests {
             trim_trailing_newline("line 1\nline 2\n".to_owned()),
             "line 1\nline 2"
         );
+    }
+
+    #[test]
+    fn prefixes_namespace_in_keychain_service_name() {
+        assert_eq!(keychain_service_name("aws"), "divechain-aws");
     }
 }
