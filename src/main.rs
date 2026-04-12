@@ -14,6 +14,7 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    List,
     Set {
         #[arg(value_name = "namespace")]
         namespace: String,
@@ -35,6 +36,13 @@ fn run(cli: Cli) -> Result<()> {
     let store = KeychainStore::new();
 
     match cli.command {
+        Commands::List => {
+            for namespace in store.list_namespaces()? {
+                println!("{namespace}");
+            }
+
+            Ok(())
+        }
         Commands::Set {
             namespace,
             env_name,
@@ -69,11 +77,22 @@ mod tests {
     use super::{Cli, Commands, normalize_secret};
 
     #[test]
+    fn parses_list_invocation() {
+        let cli = Cli::try_parse_from(["divechain", "list"]).expect("list invocation should parse");
+
+        match cli.command {
+            Commands::List => {}
+            other => panic!("expected list command, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn parses_set_invocation() {
         let cli = Cli::try_parse_from(["divechain", "set", "aws", "AWS_ACCESS_KEY_ID"])
             .expect("set invocation should parse");
 
         match cli.command {
+            Commands::List => panic!("expected set command, got list"),
             Commands::Set {
                 namespace,
                 env_name,
@@ -132,6 +151,7 @@ mod tests {
         let help = Cli::command().render_help().to_string();
 
         assert!(help.contains("Usage:"));
+        assert!(help.contains("list"));
         assert!(help.contains("set"));
     }
 

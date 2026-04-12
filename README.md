@@ -17,6 +17,16 @@ The `env` argument is stored as the Keychain account attribute, so examples use 
 Saved macOS Keychain items also use the fixed Keychain label `divechain`.
 When running in a TTY, the secret is read interactively without echo.
 
+```console
+$ cargo run -- list
+aws
+github
+```
+
+`list` searches generic password items whose Keychain label is `divechain`, extracts the
+namespace from service names shaped like `divechain-<namespace>`, removes duplicates, and
+prints namespaces only, one per line, in alphabetical order.
+
 You can also pipe the secret in non-interactive environments:
 
 ```console
@@ -25,4 +35,4 @@ $ printf 'super-secret\n' | cargo run -- set aws AWS_ACCESS_KEY_ID
 
 ## Development
 
-The current implementation intentionally exposes only the `set` subcommand. On macOS, the runtime CLI targets the default user keychain.
+On macOS, the runtime CLI targets the default user keychain.
