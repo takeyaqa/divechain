@@ -1,4 +1,4 @@
-use std::io::{self, IsTerminal, Read, Write};
+use std::io::{self, IsTerminal, Read};
 use std::process;
 
 use clap::{Parser, Subcommand};
@@ -62,33 +62,26 @@ fn run(cli: Cli) -> Result<()> {
 
 fn read_secret(namespace: &str, env_name: &str) -> Result<String> {
     if io::stdin().is_terminal() {
-        let mut stderr = io::stderr().lock();
-        write!(stderr, "{namespace}.{env_name}: ")?;
-        stderr.flush()?;
-
-        return rpassword::read_password().map_err(Into::into);
+        let prompt = format!("{namespace}.{env_name}: ");
+        rpassword::prompt_password(prompt)
+            .map(normalize_secret)
+            .map_err(Into::into)
+    } else {
+        let mut secret = String::new();
+        io::stdin().read_to_string(&mut secret)?;
+        Ok(normalize_secret(secret))
     }
-
-    let mut secret = String::new();
-    io::stdin().read_to_string(&mut secret)?;
-    Ok(trim_trailing_newline(secret))
 }
 
-fn trim_trailing_newline(mut value: String) -> String {
-    if value.ends_with('\n') {
-        value.pop();
-        if value.ends_with('\r') {
-            value.pop();
-        }
-    }
-    value
+fn normalize_secret(value: String) -> String {
+    value.trim().to_string()
 }
 
 #[cfg(test)]
 mod tests {
     use clap::{CommandFactory, error::ErrorKind};
 
-    use super::{Cli, Commands, trim_trailing_newline};
+    use super::{Cli, Commands, normalize_secret};
 
     #[test]
     fn parses_set_invocation() {
@@ -159,18 +152,28 @@ mod tests {
 
     #[test]
     fn trims_single_newline() {
-        assert_eq!(trim_trailing_newline("secret\n".to_owned()), "secret");
+        assert_eq!(normalize_secret("secret\n".to_owned()), "secret");
     }
 
     #[test]
     fn trims_crlf() {
-        assert_eq!(trim_trailing_newline("secret\r\n".to_owned()), "secret");
+        assert_eq!(normalize_secret("secret\r\n".to_owned()), "secret");
+    }
+
+    #[test]
+    fn trims_surrounding_spaces() {
+        assert_eq!(normalize_secret("  secret  ".to_owned()), "secret");
+    }
+
+    #[test]
+    fn trims_surrounding_whitespace() {
+        assert_eq!(normalize_secret("\n\t secret \r\n".to_owned()), "secret");
     }
 
     #[test]
     fn preserves_internal_whitespace() {
         assert_eq!(
-            trim_trailing_newline("line 1\nline 2\n".to_owned()),
+            normalize_secret("line 1\nline 2\n".to_owned()),
             "line 1\nline 2"
         );
     }
