@@ -133,6 +133,7 @@ pub(crate) fn load_namespace_env(namespace: &str) -> Result<Vec<(String, Vec<u8>
     options
         .class(ItemClass::generic_password())
         .service(&service)
+        .label(KEYCHAIN_ITEM_LABEL)
         .load_attributes(true)
         .limit(Limit::All);
 
