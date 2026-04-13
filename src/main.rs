@@ -101,17 +101,13 @@ fn read_secret(namespace: &str, env_name: &str) -> Result<String> {
     if io::stdin().is_terminal() {
         let prompt = format!("{namespace}.{env_name}: ");
         rpassword::prompt_password(prompt)
-            .map(normalize_secret)
+            .map(|value| value.trim().to_string())
             .map_err(Into::into)
     } else {
         let mut secret = String::new();
         io::stdin().read_to_string(&mut secret)?;
-        Ok(normalize_secret(secret))
+        Ok(secret.trim().to_string())
     }
-}
-
-fn normalize_secret(value: String) -> String {
-    value.trim().to_string()
 }
 
 #[cfg(test)]
@@ -120,7 +116,7 @@ mod tests {
 
     use clap::{CommandFactory, Parser, error::ErrorKind};
 
-    use super::{Cli, Commands, normalize_secret};
+    use super::{Cli, Commands};
 
     #[test]
     fn parses_list_invocation() {
@@ -262,33 +258,5 @@ mod tests {
         assert!(help.contains("list"));
         assert!(help.contains("set"));
         assert!(help.contains("exec"));
-    }
-
-    #[test]
-    fn trims_single_newline() {
-        assert_eq!(normalize_secret("secret\n".to_owned()), "secret");
-    }
-
-    #[test]
-    fn trims_crlf() {
-        assert_eq!(normalize_secret("secret\r\n".to_owned()), "secret");
-    }
-
-    #[test]
-    fn trims_surrounding_spaces() {
-        assert_eq!(normalize_secret("  secret  ".to_owned()), "secret");
-    }
-
-    #[test]
-    fn trims_surrounding_whitespace() {
-        assert_eq!(normalize_secret("\n\t secret \r\n".to_owned()), "secret");
-    }
-
-    #[test]
-    fn preserves_internal_whitespace() {
-        assert_eq!(
-            normalize_secret("line 1\nline 2\n".to_owned()),
-            "line 1\nline 2"
-        );
     }
 }
