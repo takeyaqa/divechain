@@ -33,6 +33,18 @@ You can also pipe the secret in non-interactive environments:
 $ printf 'super-secret\n' | cargo run -- set aws AWS_ACCESS_KEY_ID
 ```
 
+To run another command with all secrets from a namespace injected as environment variables:
+
+```console
+$ cargo run -- exec aws env | grep '^AWS_ACCESS_KEY_ID='
+AWS_ACCESS_KEY_ID=super-secret
+```
+
+`exec` searches generic password items whose service is exactly `divechain-<namespace>`,
+loads every `env -> secret` pair stored under that namespace, adds them to the child process
+environment, and then replaces the current process with the requested command.
+If no secrets are found for the namespace, the command still runs with the existing environment.
+
 ## Development
 
 On macOS, the runtime CLI targets the default user keychain.

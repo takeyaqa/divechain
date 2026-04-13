@@ -1,4 +1,5 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
+use std::io;
 
 use crate::keychain::{KeychainError, Result};
 
@@ -7,7 +8,9 @@ use security_framework::base::Error as SecurityError;
 #[cfg(target_os = "macos")]
 use security_framework::item::{ItemClass, ItemSearchOptions, Limit, SearchResult};
 #[cfg(target_os = "macos")]
-use security_framework::passwords::{PasswordOptions, set_generic_password_options};
+use security_framework::passwords::{
+    PasswordOptions, get_generic_password, set_generic_password_options,
+};
 
 const KEYCHAIN_SERVICE_PREFIX: &str = "divechain-";
 const KEYCHAIN_ITEM_LABEL: &str = "divechain";
@@ -28,6 +31,10 @@ fn map_security_error(error: SecurityError) -> KeychainError {
 #[cfg(target_os = "macos")]
 fn is_item_not_found(code: i32) -> bool {
     code == ERR_SEC_ITEM_NOT_FOUND
+}
+
+fn invalid_keychain_data(message: impl Into<String>) -> KeychainError {
+    io::Error::new(io::ErrorKind::InvalidData, message.into()).into()
 }
 
 fn namespace_from_service(service: &str) -> Option<&str> {
@@ -57,6 +64,49 @@ fn service_from_search_result(result: &SearchResult) -> Option<String> {
 }
 
 #[cfg(target_os = "macos")]
+fn attributes_from_search_result(
+    result: &SearchResult,
+    service: &str,
+) -> Result<HashMap<String, String>> {
+    result.simplify_dict().ok_or_else(|| {
+        invalid_keychain_data(format!(
+            "keychain search result for service '{service}' is missing attributes"
+        ))
+    })
+}
+
+fn env_name_from_attributes(attributes: &HashMap<String, String>, service: &str) -> Result<String> {
+    match attributes.get("acct") {
+        Some(env_name) if !env_name.is_empty() => Ok(env_name.clone()),
+        Some(_) => Err(invalid_keychain_data(format!(
+            "keychain item for service '{service}' has an empty env name"
+        ))),
+        None => Err(invalid_keychain_data(format!(
+            "keychain item for service '{service}' is missing an env name"
+        ))),
+    }
+}
+
+fn collect_env_names<I>(attribute_sets: I, service: &str) -> Result<Vec<String>>
+where
+    I: IntoIterator<Item = HashMap<String, String>>,
+{
+    let mut env_names = BTreeSet::new();
+
+    for attributes in attribute_sets {
+        let env_name = env_name_from_attributes(&attributes, service)?;
+
+        if !env_names.insert(env_name.clone()) {
+            return Err(invalid_keychain_data(format!(
+                "duplicate env name '{env_name}' found for service '{service}'"
+            )));
+        }
+    }
+
+    Ok(env_names.into_iter().collect())
+}
+
+#[cfg(target_os = "macos")]
 pub(crate) fn list_namespaces() -> Result<Vec<String>> {
     let mut options = ItemSearchOptions::new();
     options
@@ -77,6 +127,41 @@ pub(crate) fn list_namespaces() -> Result<Vec<String>> {
 }
 
 #[cfg(target_os = "macos")]
+pub(crate) fn load_namespace_env(namespace: &str) -> Result<Vec<(String, Vec<u8>)>> {
+    let service = keychain_service_name(namespace);
+    let mut options = ItemSearchOptions::new();
+    options
+        .class(ItemClass::generic_password())
+        .service(&service)
+        .label(KEYCHAIN_ITEM_LABEL)
+        .load_attributes(true)
+        .limit(Limit::All);
+
+    let results = match options.search() {
+        Ok(results) => results,
+        Err(error) if is_item_not_found(error.code()) => return Ok(vec![]),
+        Err(error) => return Err(map_security_error(error)),
+    };
+
+    let env_names = collect_env_names(
+        results
+            .iter()
+            .map(|result| attributes_from_search_result(result, &service))
+            .collect::<Result<Vec<_>>>()?,
+        &service,
+    )?;
+
+    env_names
+        .into_iter()
+        .map(|env_name| {
+            get_generic_password(&service, &env_name)
+                .map(|secret| (env_name, secret))
+                .map_err(map_security_error)
+        })
+        .collect()
+}
+
+#[cfg(target_os = "macos")]
 pub(crate) fn save_generic_password(namespace: &str, env_name: &str, secret: &[u8]) -> Result<()> {
     let service = keychain_service_name(namespace);
     let mut options = PasswordOptions::new_generic_password(&service, env_name);
@@ -89,8 +174,11 @@ pub(crate) fn save_generic_password(namespace: &str, env_name: &str, secret: &[u
 mod tests {
     #[cfg(target_os = "macos")]
     use super::is_item_not_found;
+    use std::collections::HashMap;
+
     use super::{
-        ERR_SEC_ITEM_NOT_FOUND, collect_namespaces, keychain_service_name, namespace_from_service,
+        ERR_SEC_ITEM_NOT_FOUND, collect_env_names, collect_namespaces, env_name_from_attributes,
+        keychain_service_name, namespace_from_service,
     };
 
     #[test]
@@ -121,6 +209,45 @@ mod tests {
         ]);
 
         assert_eq!(namespaces, vec!["aws", "github", "zsh"]);
+    }
+
+    #[test]
+    fn extracts_env_name_from_attributes() {
+        let env_name = env_name_from_attributes(
+            &HashMap::from([("acct".to_owned(), "AWS_ACCESS_KEY_ID".to_owned())]),
+            "divechain-aws",
+        )
+        .expect("acct attribute should be converted into an env name");
+
+        assert_eq!(env_name, "AWS_ACCESS_KEY_ID");
+    }
+
+    #[test]
+    fn rejects_missing_env_name_in_attributes() {
+        let error = env_name_from_attributes(&HashMap::new(), "divechain-aws")
+            .expect_err("missing acct should be rejected");
+
+        assert_eq!(
+            error.to_string(),
+            "keychain item for service 'divechain-aws' is missing an env name"
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_env_names() {
+        let error = collect_env_names(
+            [
+                HashMap::from([("acct".to_owned(), "AWS_ACCESS_KEY_ID".to_owned())]),
+                HashMap::from([("acct".to_owned(), "AWS_ACCESS_KEY_ID".to_owned())]),
+            ],
+            "divechain-aws",
+        )
+        .expect_err("duplicate env names should be rejected");
+
+        assert_eq!(
+            error.to_string(),
+            "duplicate env name 'AWS_ACCESS_KEY_ID' found for service 'divechain-aws'"
+        );
     }
 
     #[cfg(target_os = "macos")]

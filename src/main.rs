@@ -1,5 +1,8 @@
+use std::ffi::OsString;
 use std::io::{self, IsTerminal, Read};
-use std::process;
+#[cfg(unix)]
+use std::os::unix::{ffi::OsStringExt, process::CommandExt};
+use std::process::{self, Command};
 
 use clap::{Parser, Subcommand};
 use divechain::{KeychainStore, Result};
@@ -20,6 +23,17 @@ enum Commands {
         namespace: String,
         #[arg(value_name = "env")]
         env_name: String,
+    },
+    Exec {
+        #[arg(value_name = "namespace")]
+        namespace: String,
+        #[arg(
+            value_name = "command",
+            required = true,
+            num_args = 1..,
+            trailing_var_arg = true
+        )]
+        command: Vec<OsString>,
     },
 }
 
@@ -50,7 +64,37 @@ fn run(cli: Cli) -> Result<()> {
             let secret = read_secret(&namespace, &env_name)?;
             store.save_generic_password(&namespace, &env_name, secret.as_bytes())
         }
+        Commands::Exec { namespace, command } => exec_command(store, &namespace, command),
     }
+}
+
+#[cfg(unix)]
+fn exec_command(store: KeychainStore, namespace: &str, command: Vec<OsString>) -> Result<()> {
+    let mut command = command.into_iter();
+    let program = command.next().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "exec requires a command to run",
+        )
+    })?;
+
+    let mut process = Command::new(&program);
+    process.args(command);
+
+    for (env_name, secret) in store.load_namespace_env(namespace)? {
+        process.env(env_name, OsString::from_vec(secret));
+    }
+
+    Err(process.exec().into())
+}
+
+#[cfg(not(unix))]
+fn exec_command(_store: KeychainStore, _namespace: &str, _command: Vec<OsString>) -> Result<()> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "exec is only supported on unix platforms",
+    )
+    .into())
 }
 
 fn read_secret(namespace: &str, env_name: &str) -> Result<String> {
@@ -72,6 +116,8 @@ fn normalize_secret(value: String) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsString;
+
     use clap::{CommandFactory, Parser, error::ErrorKind};
 
     use super::{Cli, Commands, normalize_secret};
@@ -100,6 +146,60 @@ mod tests {
                 assert_eq!(namespace, "aws");
                 assert_eq!(env_name, "AWS_ACCESS_KEY_ID");
             }
+            other => panic!("expected set command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_exec_invocation() {
+        let cli =
+            Cli::try_parse_from(["divechain", "exec", "aws", "printenv", "AWS_ACCESS_KEY_ID"])
+                .expect("exec invocation should parse");
+
+        match cli.command {
+            Commands::Exec { namespace, command } => {
+                assert_eq!(namespace, "aws");
+                assert_eq!(
+                    command,
+                    vec![
+                        OsString::from("printenv"),
+                        OsString::from("AWS_ACCESS_KEY_ID"),
+                    ]
+                );
+            }
+            other => panic!("expected exec command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_exec_invocation_with_hyphenated_arguments() {
+        let cli = Cli::try_parse_from([
+            "divechain",
+            "exec",
+            "aws",
+            "env",
+            "-i",
+            "FOO=bar",
+            "printenv",
+            "FOO",
+        ])
+        .expect("exec invocation with hyphenated arguments should parse");
+
+        match cli.command {
+            Commands::Exec { namespace, command } => {
+                assert_eq!(namespace, "aws");
+                assert_eq!(
+                    command,
+                    vec![
+                        OsString::from("env"),
+                        OsString::from("-i"),
+                        OsString::from("FOO=bar"),
+                        OsString::from("printenv"),
+                        OsString::from("FOO"),
+                    ]
+                );
+            }
+            other => panic!("expected exec command, got {other:?}"),
         }
     }
 
@@ -118,6 +218,14 @@ mod tests {
     fn rejects_missing_env_for_set() {
         let error = Cli::try_parse_from(["divechain", "set", "aws"])
             .expect_err("missing env should not parse");
+
+        assert_eq!(error.kind(), ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn rejects_missing_command_for_exec() {
+        let error = Cli::try_parse_from(["divechain", "exec", "aws"])
+            .expect_err("missing command should not parse");
 
         assert_eq!(error.kind(), ErrorKind::MissingRequiredArgument);
     }
@@ -153,6 +261,7 @@ mod tests {
         assert!(help.contains("Usage:"));
         assert!(help.contains("list"));
         assert!(help.contains("set"));
+        assert!(help.contains("exec"));
     }
 
     #[test]
