@@ -58,6 +58,10 @@ impl KeychainStore {
         backend::list_namespaces()
     }
 
+    pub fn load_namespace_env(self, namespace: &str) -> Result<Vec<(String, Vec<u8>)>> {
+        backend::load_namespace_env(namespace)
+    }
+
     pub fn save_generic_password(
         self,
         namespace: &str,
@@ -78,6 +82,10 @@ mod backend {
         macos_keychain::list_namespaces()
     }
 
+    pub(super) fn load_namespace_env(namespace: &str) -> Result<Vec<(String, Vec<u8>)>> {
+        macos_keychain::load_namespace_env(namespace)
+    }
+
     pub(super) fn save_generic_password(
         namespace: &str,
         env_name: &str,
@@ -92,6 +100,10 @@ mod backend {
     use super::{KeychainError, Result};
 
     pub(super) fn list_namespaces() -> Result<Vec<String>> {
+        Err(KeychainError::UnsupportedPlatform(std::env::consts::OS))
+    }
+
+    pub(super) fn load_namespace_env(_namespace: &str) -> Result<Vec<(String, Vec<u8>)>> {
         Err(KeychainError::UnsupportedPlatform(std::env::consts::OS))
     }
 
@@ -136,6 +148,21 @@ mod tests {
     fn list_namespaces_is_disabled_outside_macos() {
         let error = KeychainStore::new()
             .list_namespaces()
+            .expect_err("non-mac targets should reject keychain access");
+
+        match error {
+            KeychainError::UnsupportedPlatform(platform) => {
+                assert_eq!(platform, std::env::consts::OS);
+            }
+            other => panic!("expected unsupported platform, got {other:?}"),
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn load_namespace_env_is_disabled_outside_macos() {
+        let error = KeychainStore::new()
+            .load_namespace_env("namespace")
             .expect_err("non-mac targets should reject keychain access");
 
         match error {
