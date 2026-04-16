@@ -17,24 +17,33 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    List,
+    /// Set a secret for a namespace and environment variable name
     Set {
-        #[arg(value_name = "namespace")]
+        /// The namespace to store the secret under
+        #[arg(required = true)]
         namespace: String,
-        #[arg(value_name = "env")]
+        /// The environment variable name to store the secret under
+        #[arg(required = true)]
         env: String,
     },
+    /// List all namespaces
+    List,
+    /// Unset a secret for a namespace and environment variable name
     Unset {
-        #[arg(value_name = "namespace")]
+        /// The namespace to delete the secret from
+        #[arg(required = true)]
         namespace: String,
-        #[arg(value_name = "env")]
+        /// The environment variable name to delete the secret from
+        #[arg(required = true)]
         env: String,
     },
+    /// Execute a command with environment variables from a namespace
     Exec {
-        #[arg(value_name = "namespace")]
+        /// The namespace to load environment variables from
+        #[arg(required = true)]
         namespace: String,
+        /// The command to execute with environment variables from the namespace
         #[arg(
-            value_name = "command",
             required = true,
             num_args = 1..,
             last = true
