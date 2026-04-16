@@ -1,6 +1,6 @@
 # divechain
 
-`divechain` is a CLI for running command with secrets from the macOS Keychain injected as environment variables.
+`divechain` is a CLI for running commands with secrets from the macOS Keychain injected as environment variables.
 
 ## Usage
 
