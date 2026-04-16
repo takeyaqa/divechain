@@ -1,4 +1,4 @@
-use snapbox::cmd::{Command, cargo_bin};
+use snapbox::cmd::{cargo_bin, Command};
 
 #[test]
 #[ignore = "Requires user input, not suitable for automated testing"]
