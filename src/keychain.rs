@@ -6,6 +6,7 @@ pub type Result<T> = std::result::Result<T, KeychainError>;
 #[derive(Debug)]
 pub enum KeychainError {
     KeychainFailure { code: i32, message: Option<String> },
+    SecretNotFound { namespace: String, env: String },
     UnsupportedPlatform(&'static str),
     Io(io::Error),
 }
@@ -22,6 +23,9 @@ impl fmt::Display for KeychainError {
                 } else {
                     write!(f, "keychain operation failed with OSStatus {code}")
                 }
+            }
+            Self::SecretNotFound { namespace, env } => {
+                write!(f, "secret '{namespace}.{env}' does not exist")
             }
             Self::UnsupportedPlatform(platform) => {
                 write!(f, "macOS Keychain backend is unsupported on {platform}")
@@ -65,6 +69,10 @@ impl KeychainStore {
     pub fn save_generic_password(self, namespace: &str, env: &str, secret: &[u8]) -> Result<()> {
         backend::save_generic_password(namespace, env, secret)
     }
+
+    pub fn delete_generic_password(self, namespace: &str, env: &str) -> Result<()> {
+        backend::delete_generic_password(namespace, env)
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -83,6 +91,10 @@ mod backend {
 
     pub(super) fn save_generic_password(namespace: &str, env: &str, secret: &[u8]) -> Result<()> {
         macos_keychain::save_generic_password(namespace, env, secret)
+    }
+
+    pub(super) fn delete_generic_password(namespace: &str, env: &str) -> Result<()> {
+        macos_keychain::delete_generic_password(namespace, env)
     }
 }
 
@@ -103,6 +115,10 @@ mod backend {
         _env: &str,
         _secret: &[u8],
     ) -> Result<()> {
+        Err(KeychainError::UnsupportedPlatform(std::env::consts::OS))
+    }
+
+    pub(super) fn delete_generic_password(_namespace: &str, _env: &str) -> Result<()> {
         Err(KeychainError::UnsupportedPlatform(std::env::consts::OS))
     }
 }
@@ -154,6 +170,21 @@ mod tests {
     fn load_namespace_env_is_disabled_outside_macos() {
         let error = KeychainStore::new()
             .load_namespace_env("namespace")
+            .expect_err("non-mac targets should reject keychain access");
+
+        match error {
+            KeychainError::UnsupportedPlatform(platform) => {
+                assert_eq!(platform, std::env::consts::OS);
+            }
+            other => panic!("expected unsupported platform, got {other:?}"),
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn delete_generic_password_is_disabled_outside_macos() {
+        let error = KeychainStore::new()
+            .delete_generic_password("namespace", "ENV_NAME")
             .expect_err("non-mac targets should reject keychain access");
 
         match error {

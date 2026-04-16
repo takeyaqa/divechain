@@ -9,7 +9,8 @@ use security_framework::base::Error as SecurityError;
 use security_framework::item::{ItemClass, ItemSearchOptions, Limit, SearchResult};
 #[cfg(target_os = "macos")]
 use security_framework::passwords::{
-    PasswordOptions, get_generic_password, set_generic_password_options,
+    PasswordOptions, delete_generic_password as delete_generic_password_entry,
+    get_generic_password, set_generic_password_options,
 };
 
 const KEYCHAIN_SERVICE_PREFIX: &str = "divechain-";
@@ -28,9 +29,28 @@ fn map_security_error(error: SecurityError) -> KeychainError {
     }
 }
 
-#[cfg(target_os = "macos")]
 fn is_item_not_found(code: i32) -> bool {
     code == ERR_SEC_ITEM_NOT_FOUND
+}
+
+fn secret_not_found(namespace: &str, env: &str) -> KeychainError {
+    KeychainError::SecretNotFound {
+        namespace: namespace.to_owned(),
+        env: env.to_owned(),
+    }
+}
+
+fn map_delete_generic_password_error(
+    namespace: &str,
+    env: &str,
+    code: i32,
+    message: Option<String>,
+) -> KeychainError {
+    if is_item_not_found(code) {
+        secret_not_found(namespace, env)
+    } else {
+        KeychainError::KeychainFailure { code, message }
+    }
 }
 
 fn invalid_keychain_data(message: impl Into<String>) -> KeychainError {
@@ -169,6 +189,15 @@ pub(crate) fn save_generic_password(namespace: &str, env: &str, secret: &[u8]) -
     set_generic_password_options(secret, options).map_err(map_security_error)
 }
 
+#[cfg(target_os = "macos")]
+pub(crate) fn delete_generic_password(namespace: &str, env: &str) -> Result<()> {
+    let service = keychain_service_name(namespace);
+
+    delete_generic_password_entry(&service, env).map_err(|error| {
+        map_delete_generic_password_error(namespace, env, error.code(), error.message())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     #[cfg(target_os = "macos")]
@@ -177,8 +206,9 @@ mod tests {
 
     use super::{
         ERR_SEC_ITEM_NOT_FOUND, collect_envs, collect_namespaces, env_from_attributes,
-        keychain_service_name, namespace_from_service,
+        keychain_service_name, map_delete_generic_password_error, namespace_from_service,
     };
+    use crate::KeychainError;
 
     #[test]
     fn prefixes_namespace_in_keychain_service_name() {
@@ -254,5 +284,41 @@ mod tests {
     fn treats_item_not_found_as_empty_result() {
         assert!(is_item_not_found(ERR_SEC_ITEM_NOT_FOUND));
         assert!(!is_item_not_found(-1));
+    }
+
+    #[test]
+    fn converts_missing_secret_delete_into_domain_error() {
+        let error = map_delete_generic_password_error(
+            "aws",
+            "AWS_ACCESS_KEY_ID",
+            ERR_SEC_ITEM_NOT_FOUND,
+            None,
+        );
+
+        match error {
+            KeychainError::SecretNotFound { namespace, env } => {
+                assert_eq!(namespace, "aws");
+                assert_eq!(env, "AWS_ACCESS_KEY_ID");
+            }
+            _ => panic!("expected missing secret error variant"),
+        }
+    }
+
+    #[test]
+    fn preserves_non_missing_delete_errors() {
+        let error = map_delete_generic_password_error(
+            "aws",
+            "AWS_ACCESS_KEY_ID",
+            -1,
+            Some("boom".to_owned()),
+        );
+
+        match error {
+            KeychainError::KeychainFailure { code, message } => {
+                assert_eq!(code, -1);
+                assert_eq!(message.as_deref(), Some("boom"));
+            }
+            _ => panic!("expected keychain failure variant"),
+        }
     }
 }

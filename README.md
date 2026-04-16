@@ -33,6 +33,15 @@ You can also pipe the secret in non-interactive environments:
 $ printf 'super-secret\n' | cargo run -- set aws AWS_ACCESS_KEY_ID
 ```
 
+To remove a previously stored secret:
+
+```console
+$ cargo run -- unset aws AWS_ACCESS_KEY_ID
+```
+
+`unset` deletes the generic password item for the exact `namespace` and `env` pair.
+If no matching secret exists, the command prints an error to standard error and exits with a non-zero status.
+
 To run another command with all secrets from a namespace injected as environment variables:
 
 ```console

@@ -37,10 +37,11 @@ fn help_lists_supported_subcommands() {
             r"Usage: divechain <COMMAND>
 
 Commands:
-  list  
-  set   
-  exec  
-  help  Print this message or the help of the given subcommand(s)
+  list   
+  set    
+  unset  
+  exec   
+  help   Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help     Print help
@@ -67,6 +68,14 @@ fn rejects_unknown_command() {
 fn rejects_missing_env_for_set() {
     Command::new(cargo_bin("divechain"))
         .args(["set", "aws"])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn rejects_missing_env_for_unset() {
+    Command::new(cargo_bin("divechain"))
+        .args(["unset", "aws"])
         .assert()
         .failure();
 }
