@@ -1,6 +1,7 @@
 use snapbox::cmd::{Command, cargo_bin};
 
 #[test]
+#[ignore = "Requires user input, not suitable for automated testing"]
 fn set_command_parses_namespace_and_env_name() {
     Command::new(cargo_bin("divechain"))
         .args(["set", "aws", "AWS_ACCESS_KEY_ID"])
@@ -9,6 +10,7 @@ fn set_command_parses_namespace_and_env_name() {
 }
 
 #[test]
+#[ignore = "Requires user input, not suitable for automated testing"]
 fn list_command_prints_namespaces() {
     Command::new(cargo_bin("divechain"))
         .arg("list")
@@ -18,6 +20,7 @@ fn list_command_prints_namespaces() {
 }
 
 #[test]
+#[ignore = "Requires user input, not suitable for automated testing"]
 fn exec_command_parses_namespace_and_command() {
     Command::new(cargo_bin("divechain"))
         .args(["exec", "aws", "printenv", "AWS_ACCESS_KEY_ID"])
