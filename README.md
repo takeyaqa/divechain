@@ -1,57 +1,58 @@
 # divechain
 
-`divechain` is a Rust CLI for storing secrets in platform credential stores.
-
-The first backend is macOS Keychain, implemented with [`security-framework`](https://docs.rs/security-framework/latest/security_framework/).
+`divechain` is a CLI for running command with secrets from the macOS Keychain injected as environment variables.
 
 ## Usage
 
+### `set <namespace> <env>`
+
 ```console
-$ cargo run -- set aws AWS_ACCESS_KEY_ID
-aws.AWS_ACCESS_KEY_ID: 
+$ divechain set github GITHUB_TOKEN
+github.GITHUB_TOKEN: 
 ```
 
-`set` creates or updates a generic password item in the default user keychain.
-When `namespace` is `aws`, the macOS Keychain service name is `divechain-aws`.
-The `env` argument is stored as the Keychain account attribute, so examples use uppercase environment-variable names.
+`set` creates or updates a secrets in the default user keychain.
+When `namespace` is `github`, the macOS Keychain service name is `divechain-github`.
 Saved macOS Keychain items also use the fixed Keychain label `divechain`.
 When running in a TTY, the secret is read interactively without echo.
-
-```console
-$ cargo run -- list
-aws
-github
-```
-
-`list` searches generic password items whose Keychain label is `divechain`, extracts the
-namespace from service names shaped like `divechain-<namespace>`, removes duplicates, and
-prints namespaces only, one per line, in alphabetical order.
 
 You can also pipe the secret in non-interactive environments:
 
 ```console
-$ printf 'super-secret\n' | cargo run -- set aws AWS_ACCESS_KEY_ID
+$ ./fetch_secret_from_somewhere.sh | divechain set github GITHUB_TOKEN
 ```
+
+### `list`
+
+```console
+$ divechain list
+aws
+github
+```
+
+`list` searches secrets whose Keychain label is `divechain`, extracts the namespace, removes duplicates, and prints namespaces only, one per line, in alphabetical order.
+
+### `unset <namespace> <env>`
 
 To remove a previously stored secret:
 
 ```console
-$ cargo run -- unset aws AWS_ACCESS_KEY_ID
+$ divechain unset github GITHUB_TOKEN
 ```
 
-`unset` deletes the generic password item for the exact `namespace` and `env` pair.
+`unset` deletes the secret for the exact `namespace` and `env` pair.
 If no matching secret exists, the command prints an error to standard error and exits with a non-zero status.
+
+### `exec <namespace> -- <command> [args...]`
 
 To run another command with all secrets from a namespace injected as environment variables:
 
 ```console
-$ cargo run -- exec aws -- env | grep '^AWS_ACCESS_KEY_ID='
-AWS_ACCESS_KEY_ID=super-secret
+$ divechain exec github -- gh auth status
+Logged in to github.com account janedoe (...)
 ```
 
-`exec` searches generic password items whose service is exactly `divechain-<namespace>`,
-loads every `env -> secret` pair stored under that namespace, adds them to the child process
-environment, and then replaces the current process with the requested command.
+`exec` searches secrets whose have the specified `namespace`, loads every `env -> secret` pair stored under that namespace, adds them to the child process environment, and then replaces the current process with the requested command.
 If no secrets are found for the namespace, the command still runs with the existing environment.
 
 ## Development
