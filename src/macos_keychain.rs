@@ -75,9 +75,9 @@ fn attributes_from_search_result(
     })
 }
 
-fn env_name_from_attributes(attributes: &HashMap<String, String>, service: &str) -> Result<String> {
+fn env_from_attributes(attributes: &HashMap<String, String>, service: &str) -> Result<String> {
     match attributes.get("acct") {
-        Some(env_name) if !env_name.is_empty() => Ok(env_name.clone()),
+        Some(env) if !env.is_empty() => Ok(env.clone()),
         Some(_) => Err(invalid_keychain_data(format!(
             "keychain item for service '{service}' has an empty env name"
         ))),
@@ -87,23 +87,23 @@ fn env_name_from_attributes(attributes: &HashMap<String, String>, service: &str)
     }
 }
 
-fn collect_env_names<I>(attribute_sets: I, service: &str) -> Result<Vec<String>>
+fn collect_envs<I>(attribute_sets: I, service: &str) -> Result<Vec<String>>
 where
     I: IntoIterator<Item = HashMap<String, String>>,
 {
-    let mut env_names = BTreeSet::new();
+    let mut envs = BTreeSet::new();
 
     for attributes in attribute_sets {
-        let env_name = env_name_from_attributes(&attributes, service)?;
+        let env = env_from_attributes(&attributes, service)?;
 
-        if !env_names.insert(env_name.clone()) {
+        if !envs.insert(env.clone()) {
             return Err(invalid_keychain_data(format!(
-                "duplicate env name '{env_name}' found for service '{service}'"
+                "duplicate env name '{env}' found for service '{service}'"
             )));
         }
     }
 
-    Ok(env_names.into_iter().collect())
+    Ok(envs.into_iter().collect())
 }
 
 #[cfg(target_os = "macos")]
@@ -143,7 +143,7 @@ pub(crate) fn load_namespace_env(namespace: &str) -> Result<Vec<(String, Vec<u8>
         Err(error) => return Err(map_security_error(error)),
     };
 
-    let env_names = collect_env_names(
+    let envs = collect_envs(
         results
             .iter()
             .map(|result| attributes_from_search_result(result, &service))
@@ -151,20 +151,19 @@ pub(crate) fn load_namespace_env(namespace: &str) -> Result<Vec<(String, Vec<u8>
         &service,
     )?;
 
-    env_names
-        .into_iter()
-        .map(|env_name| {
-            get_generic_password(&service, &env_name)
-                .map(|secret| (env_name, secret))
+    envs.into_iter()
+        .map(|env| {
+            get_generic_password(&service, &env)
+                .map(|secret| (env, secret))
                 .map_err(map_security_error)
         })
         .collect()
 }
 
 #[cfg(target_os = "macos")]
-pub(crate) fn save_generic_password(namespace: &str, env_name: &str, secret: &[u8]) -> Result<()> {
+pub(crate) fn save_generic_password(namespace: &str, env: &str, secret: &[u8]) -> Result<()> {
     let service = keychain_service_name(namespace);
-    let mut options = PasswordOptions::new_generic_password(&service, env_name);
+    let mut options = PasswordOptions::new_generic_password(&service, env);
     options.set_label(KEYCHAIN_ITEM_LABEL);
 
     set_generic_password_options(secret, options).map_err(map_security_error)
@@ -177,7 +176,7 @@ mod tests {
     use std::collections::HashMap;
 
     use super::{
-        ERR_SEC_ITEM_NOT_FOUND, collect_env_names, collect_namespaces, env_name_from_attributes,
+        ERR_SEC_ITEM_NOT_FOUND, collect_envs, collect_namespaces, env_from_attributes,
         keychain_service_name, namespace_from_service,
     };
 
@@ -213,18 +212,18 @@ mod tests {
 
     #[test]
     fn extracts_env_name_from_attributes() {
-        let env_name = env_name_from_attributes(
+        let env = env_from_attributes(
             &HashMap::from([("acct".to_owned(), "AWS_ACCESS_KEY_ID".to_owned())]),
             "divechain-aws",
         )
         .expect("acct attribute should be converted into an env name");
 
-        assert_eq!(env_name, "AWS_ACCESS_KEY_ID");
+        assert_eq!(env, "AWS_ACCESS_KEY_ID");
     }
 
     #[test]
     fn rejects_missing_env_name_in_attributes() {
-        let error = env_name_from_attributes(&HashMap::new(), "divechain-aws")
+        let error = env_from_attributes(&HashMap::new(), "divechain-aws")
             .expect_err("missing acct should be rejected");
 
         assert_eq!(
@@ -235,7 +234,7 @@ mod tests {
 
     #[test]
     fn rejects_duplicate_env_names() {
-        let error = collect_env_names(
+        let error = collect_envs(
             [
                 HashMap::from([("acct".to_owned(), "AWS_ACCESS_KEY_ID".to_owned())]),
                 HashMap::from([("acct".to_owned(), "AWS_ACCESS_KEY_ID".to_owned())]),
