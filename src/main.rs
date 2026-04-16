@@ -99,7 +99,7 @@ fn exec_command(_store: KeychainStore, _namespace: &str, _command: Vec<OsString>
 
 fn read_secret(namespace: &str, env_name: &str) -> Result<String> {
     let secret = if io::stdin().is_terminal() {
-        rpassword::prompt_password(format!("{}.{}:", namespace, env_name))?
+        rpassword::prompt_password(format!("{}.{}: ", namespace, env_name))?
     } else {
         let mut secret = String::new();
         io::stdin().read_to_string(&mut secret)?;
