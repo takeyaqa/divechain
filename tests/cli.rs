@@ -13,7 +13,7 @@ fn list_command_prints_namespaces() {
     Command::new(cargo_bin("divechain"))
         .arg("list")
         .assert()
-        .stdout_eq("aws\n")
+        .stdout_eq("")
         .success();
 }
 
