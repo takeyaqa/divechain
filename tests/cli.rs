@@ -34,7 +34,9 @@ fn help_lists_supported_subcommands() {
         .arg("help")
         .assert()
         .stdout_eq(
-            r"Usage: divechain <COMMAND>
+            r"A CLI for running commands with secrets from the macOS Keychain injected as environment variables.
+
+Usage: divechain <COMMAND>
 
 Commands:
   set    Set a secret for a namespace and environment variable name
