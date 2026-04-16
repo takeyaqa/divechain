@@ -2,6 +2,11 @@
 name = "divechain"
 version = "0.1.0"
 edition = "2024"
+description = "A CLI for running commands with secrets from the macOS Keychain injected as environment variables."
+repository = "https://github.com/takeyaqa/divechain"
+license = "MIT"
+keywords = ["cli", "secrets", "keychain", "macos", "devcontainers"]
+categories = ["authentication", "command-line-utilities", "development-tools", "security"]
 
 [dependencies]
 clap = { version = "4.6", features = ["derive"] }
