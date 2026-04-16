@@ -31,7 +31,7 @@ enum Commands {
             value_name = "command",
             required = true,
             num_args = 1..,
-            trailing_var_arg = true
+            last = true
         )]
         command: Vec<OsString>,
     },

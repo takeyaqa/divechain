@@ -36,7 +36,7 @@ $ printf 'super-secret\n' | cargo run -- set aws AWS_ACCESS_KEY_ID
 To run another command with all secrets from a namespace injected as environment variables:
 
 ```console
-$ cargo run -- exec aws env | grep '^AWS_ACCESS_KEY_ID='
+$ cargo run -- exec aws -- env | grep '^AWS_ACCESS_KEY_ID='
 AWS_ACCESS_KEY_ID=super-secret
 ```
 

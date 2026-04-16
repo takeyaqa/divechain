@@ -23,7 +23,7 @@ fn list_command_prints_namespaces() {
 #[ignore = "Requires user input, not suitable for automated testing"]
 fn exec_command_parses_namespace_and_command() {
     Command::new(cargo_bin("divechain"))
-        .args(["exec", "aws", "printenv", "AWS_ACCESS_KEY_ID"])
+        .args(["exec", "aws", "--", "printenv", "AWS_ACCESS_KEY_ID"])
         .assert()
         .success();
 }
