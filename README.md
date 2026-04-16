@@ -11,7 +11,7 @@ $ divechain set github GITHUB_TOKEN
 github.GITHUB_TOKEN: 
 ```
 
-`set` creates or updates a secrets in the default user keychain.
+`set` creates or updates a secret in the default user keychain.
 When `namespace` is `github`, the macOS Keychain service name is `divechain-github`.
 Saved macOS Keychain items also use the fixed Keychain label `divechain`.
 When running in a TTY, the secret is read interactively without echo.
