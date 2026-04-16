@@ -37,10 +37,10 @@ fn help_lists_supported_subcommands() {
             r"Usage: divechain <COMMAND>
 
 Commands:
-  list   
-  set    
-  unset  
-  exec   
+  set    Set a secret for a namespace and environment variable name
+  list   List all namespaces
+  unset  Unset a secret for a namespace and environment variable name
+  exec   Execute a command with environment variables from a namespace
   help   Print this message or the help of the given subcommand(s)
 
 Options:
