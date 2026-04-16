@@ -22,7 +22,7 @@ enum Commands {
         #[arg(value_name = "namespace")]
         namespace: String,
         #[arg(value_name = "env")]
-        env_name: String,
+        env: String,
     },
     Exec {
         #[arg(value_name = "namespace")]
@@ -57,12 +57,9 @@ fn run(cli: Cli) -> Result<()> {
 
             Ok(())
         }
-        Commands::Set {
-            namespace,
-            env_name,
-        } => {
-            let secret = read_secret(&namespace, &env_name)?;
-            store.save_generic_password(&namespace, &env_name, secret.as_bytes())
+        Commands::Set { namespace, env } => {
+            let secret = read_secret(&namespace, &env)?;
+            store.save_generic_password(&namespace, &env, secret.as_bytes())
         }
         Commands::Exec { namespace, command } => exec_command(store, &namespace, command),
     }
@@ -81,8 +78,8 @@ fn exec_command(store: KeychainStore, namespace: &str, command: Vec<OsString>) -
     let mut process = Command::new(&program);
     process.args(command);
 
-    for (env_name, secret) in store.load_namespace_env(namespace)? {
-        process.env(env_name, OsString::from_vec(secret));
+    for (env, secret) in store.load_namespace_env(namespace)? {
+        process.env(env, OsString::from_vec(secret));
     }
 
     Err(process.exec().into())
@@ -97,9 +94,9 @@ fn exec_command(_store: KeychainStore, _namespace: &str, _command: Vec<OsString>
     .into())
 }
 
-fn read_secret(namespace: &str, env_name: &str) -> Result<String> {
+fn read_secret(namespace: &str, env: &str) -> Result<String> {
     let secret = if io::stdin().is_terminal() {
-        rpassword::prompt_password(format!("{}.{}: ", namespace, env_name))?
+        rpassword::prompt_password(format!("{}.{}: ", namespace, env))?
     } else {
         let mut secret = String::new();
         io::stdin().read_to_string(&mut secret)?;
