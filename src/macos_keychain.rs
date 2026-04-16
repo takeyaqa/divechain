@@ -300,7 +300,7 @@ mod tests {
                 assert_eq!(namespace, "aws");
                 assert_eq!(env, "AWS_ACCESS_KEY_ID");
             }
-            other => panic!("expected missing secret error, got {other:?}"),
+            _ => panic!("expected missing secret error variant"),
         }
     }
 
@@ -318,7 +318,7 @@ mod tests {
                 assert_eq!(code, -1);
                 assert_eq!(message.as_deref(), Some("boom"));
             }
-            other => panic!("expected keychain failure, got {other:?}"),
+            _ => panic!("expected keychain failure variant"),
         }
     }
 }
