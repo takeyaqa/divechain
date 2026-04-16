@@ -11,4 +11,4 @@ rpassword = "7.4"
 security-framework = "3.7"
 
 [dev-dependencies]
-snapbox = { version = "1.2", features = ["cmd"] }
+snapbox = "1.2"
