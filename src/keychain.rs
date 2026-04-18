@@ -58,20 +58,20 @@ impl KeychainStore {
         Self
     }
 
+    pub fn save_secret(self, namespace: &str, env: &str, secret: &[u8]) -> Result<()> {
+        backend::save_secret(namespace, env, secret)
+    }
+
+    pub fn delete_secret(self, namespace: &str, env: &str) -> Result<()> {
+        backend::delete_secret(namespace, env)
+    }
+
     pub fn list_namespaces(self) -> Result<Vec<String>> {
         backend::list_namespaces()
     }
 
     pub fn load_namespace_env(self, namespace: &str) -> Result<Vec<(String, Vec<u8>)>> {
         backend::load_namespace_env(namespace)
-    }
-
-    pub fn save_generic_password(self, namespace: &str, env: &str, secret: &[u8]) -> Result<()> {
-        backend::save_generic_password(namespace, env, secret)
-    }
-
-    pub fn delete_generic_password(self, namespace: &str, env: &str) -> Result<()> {
-        backend::delete_generic_password(namespace, env)
     }
 }
 
@@ -81,6 +81,14 @@ mod backend {
 
     use super::Result;
 
+    pub(super) fn save_secret(namespace: &str, env: &str, secret: &[u8]) -> Result<()> {
+        macos_keychain::save_secret(namespace, env, secret)
+    }
+
+    pub(super) fn delete_secret(namespace: &str, env: &str) -> Result<()> {
+        macos_keychain::delete_secret(namespace, env)
+    }
+
     pub(super) fn list_namespaces() -> Result<Vec<String>> {
         macos_keychain::list_namespaces()
     }
@@ -88,37 +96,25 @@ mod backend {
     pub(super) fn load_namespace_env(namespace: &str) -> Result<Vec<(String, Vec<u8>)>> {
         macos_keychain::load_namespace_env(namespace)
     }
-
-    pub(super) fn save_generic_password(namespace: &str, env: &str, secret: &[u8]) -> Result<()> {
-        macos_keychain::save_generic_password(namespace, env, secret)
-    }
-
-    pub(super) fn delete_generic_password(namespace: &str, env: &str) -> Result<()> {
-        macos_keychain::delete_generic_password(namespace, env)
-    }
 }
 
 #[cfg(not(target_os = "macos"))]
 mod backend {
     use super::{KeychainError, Result};
 
+    pub(super) fn save_secret(_namespace: &str, _env: &str, _secret: &[u8]) -> Result<()> {
+        Err(KeychainError::UnsupportedPlatform(std::env::consts::OS))
+    }
+
+    pub(super) fn delete_secret(_namespace: &str, _env: &str) -> Result<()> {
+        Err(KeychainError::UnsupportedPlatform(std::env::consts::OS))
+    }
+
     pub(super) fn list_namespaces() -> Result<Vec<String>> {
         Err(KeychainError::UnsupportedPlatform(std::env::consts::OS))
     }
 
     pub(super) fn load_namespace_env(_namespace: &str) -> Result<Vec<(String, Vec<u8>)>> {
-        Err(KeychainError::UnsupportedPlatform(std::env::consts::OS))
-    }
-
-    pub(super) fn save_generic_password(
-        _namespace: &str,
-        _env: &str,
-        _secret: &[u8],
-    ) -> Result<()> {
-        Err(KeychainError::UnsupportedPlatform(std::env::consts::OS))
-    }
-
-    pub(super) fn delete_generic_password(_namespace: &str, _env: &str) -> Result<()> {
         Err(KeychainError::UnsupportedPlatform(std::env::consts::OS))
     }
 }
@@ -139,7 +135,7 @@ mod tests {
     #[test]
     fn backend_is_disabled_outside_macos() {
         let error = KeychainStore::new()
-            .save_generic_password("namespace", "ENV_NAME", b"secret")
+            .save_secret("namespace", "ENV_NAME", b"secret")
             .expect_err("non-mac targets should reject keychain access");
 
         match error {
@@ -182,9 +178,9 @@ mod tests {
 
     #[cfg(not(target_os = "macos"))]
     #[test]
-    fn delete_generic_password_is_disabled_outside_macos() {
+    fn delete_secret_is_disabled_outside_macos() {
         let error = KeychainStore::new()
-            .delete_generic_password("namespace", "ENV_NAME")
+            .delete_secret("namespace", "ENV_NAME")
             .expect_err("non-mac targets should reject keychain access");
 
         match error {
