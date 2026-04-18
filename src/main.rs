@@ -74,9 +74,9 @@ fn run(cli: Cli) -> Result<()> {
         }
         Commands::Set { namespace, env } => {
             let secret = read_secret(&namespace, &env)?;
-            store.save_generic_password(&namespace, &env, secret.as_bytes())
+            store.save_secret(&namespace, &env, secret.as_bytes())
         }
-        Commands::Unset { namespace, env } => store.delete_generic_password(&namespace, &env),
+        Commands::Unset { namespace, env } => store.delete_secret(&namespace, &env),
         Commands::Exec { namespace, command } => exec_command(store, &namespace, command),
     }
 }
