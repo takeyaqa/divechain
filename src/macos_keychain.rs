@@ -39,7 +39,7 @@ fn secret_not_found(namespace: &str, env: &str) -> KeychainError {
     }
 }
 
-fn map_delete_generic_password_error(
+fn map_delete_secret_error(
     namespace: &str,
     env: &str,
     code: i32,
@@ -65,9 +65,8 @@ pub(crate) fn save_secret(namespace: &str, env: &str, secret: &[u8]) -> Result<(
 pub(crate) fn delete_secret(namespace: &str, env: &str) -> Result<()> {
     let service = keychain_service_name(namespace);
 
-    delete_generic_password(&service, env).map_err(|error| {
-        map_delete_generic_password_error(namespace, env, error.code(), error.message())
-    })
+    delete_generic_password(&service, env)
+        .map_err(|error| map_delete_secret_error(namespace, env, error.code(), error.message()))
 }
 
 #[cfg(target_os = "macos")]
@@ -205,7 +204,7 @@ mod tests {
 
     use super::{
         ERR_SEC_ITEM_NOT_FOUND, collect_envs, collect_namespaces, env_from_attributes,
-        keychain_service_name, map_delete_generic_password_error, namespace_from_service,
+        keychain_service_name, map_delete_secret_error, namespace_from_service,
     };
     use crate::KeychainError;
 
@@ -287,12 +286,8 @@ mod tests {
 
     #[test]
     fn converts_missing_secret_delete_into_domain_error() {
-        let error = map_delete_generic_password_error(
-            "aws",
-            "AWS_ACCESS_KEY_ID",
-            ERR_SEC_ITEM_NOT_FOUND,
-            None,
-        );
+        let error =
+            map_delete_secret_error("aws", "AWS_ACCESS_KEY_ID", ERR_SEC_ITEM_NOT_FOUND, None);
 
         match error {
             KeychainError::SecretNotFound { namespace, env } => {
@@ -305,12 +300,8 @@ mod tests {
 
     #[test]
     fn preserves_non_missing_delete_errors() {
-        let error = map_delete_generic_password_error(
-            "aws",
-            "AWS_ACCESS_KEY_ID",
-            -1,
-            Some("boom".to_owned()),
-        );
+        let error =
+            map_delete_secret_error("aws", "AWS_ACCESS_KEY_ID", -1, Some("boom".to_owned()));
 
         match error {
             KeychainError::KeychainFailure { code, message } => {
