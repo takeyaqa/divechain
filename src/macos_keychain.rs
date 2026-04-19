@@ -196,7 +196,6 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
-    use crate::KeychainError;
 
     #[test]
     fn prefixes_namespace_in_keychain_service_name() {
