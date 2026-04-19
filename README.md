@@ -48,7 +48,7 @@ $ divechain exec github -- gh auth status
 Logged in to github.com account janedoe (...)
 ```
 
-`exec` searches for secrets with the specified `namespace`, loads every `env -> secret` pair stored under that namespace, adds them to the child process environment, and then replaces the current process with the requested command. If no secrets are found for the namespace, the command still runs with the existing environment.
+`exec` searches for secrets with the specified `namespace`, loads every `env -> secret` pair stored under that namespace, adds them to the child process environment, and then replaces the current process with the requested command. If no secrets are found for the namespace, the command prints an error to standard error and exits with a non-zero status instead of running the command.
 
 ## Development
 
