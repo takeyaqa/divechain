@@ -16,42 +16,6 @@ const KEYCHAIN_SERVICE_PREFIX: &str = "divechain-";
 const KEYCHAIN_ITEM_LABEL: &str = "divechain";
 const ERR_SEC_ITEM_NOT_FOUND: i32 = -25300;
 
-fn keychain_service_name(namespace: &str) -> String {
-    format!("{}{}", KEYCHAIN_SERVICE_PREFIX, namespace)
-}
-
-#[cfg(target_os = "macos")]
-fn map_security_error(error: SecurityError) -> KeychainError {
-    KeychainError::KeychainFailure {
-        code: error.code(),
-        message: error.message(),
-    }
-}
-
-fn is_item_not_found(code: i32) -> bool {
-    code == ERR_SEC_ITEM_NOT_FOUND
-}
-
-fn secret_not_found(namespace: &str, env: &str) -> KeychainError {
-    KeychainError::SecretNotFound {
-        namespace: namespace.to_owned(),
-        env: env.to_owned(),
-    }
-}
-
-fn map_delete_secret_error(
-    namespace: &str,
-    env: &str,
-    code: i32,
-    message: Option<String>,
-) -> KeychainError {
-    if is_item_not_found(code) {
-        secret_not_found(namespace, env)
-    } else {
-        KeychainError::KeychainFailure { code, message }
-    }
-}
-
 #[cfg(target_os = "macos")]
 pub(crate) fn save_secret(namespace: &str, env: &str, secret: &[u8]) -> Result<()> {
     let service = keychain_service_name(namespace);
@@ -80,13 +44,20 @@ pub(crate) fn list_namespaces() -> Result<Vec<String>> {
 
     let results = match options.search() {
         Ok(results) => results,
-        Err(error) if is_item_not_found(error.code()) => return Ok(vec![]),
+        Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => return Ok(vec![]),
         Err(error) => return Err(map_security_error(error)),
     };
 
-    Ok(collect_namespaces(
-        results.iter().filter_map(service_from_search_result),
-    ))
+    let services: Vec<_> = results
+        .iter()
+        .filter_map(|result| {
+            result
+                .simplify_dict()
+                .and_then(|attributes| attributes.get("svce").cloned())
+        })
+        .collect();
+
+    Ok(collect_namespaces(services))
 }
 
 #[cfg(target_os = "macos")]
@@ -102,7 +73,7 @@ pub(crate) fn load_namespace_env(namespace: &str) -> Result<Vec<(String, Vec<u8>
 
     let results = match options.search() {
         Ok(results) => results,
-        Err(error) if is_item_not_found(error.code()) => return Ok(vec![]),
+        Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => return Ok(vec![]),
         Err(error) => return Err(map_security_error(error)),
     };
 
@@ -123,6 +94,34 @@ pub(crate) fn load_namespace_env(namespace: &str) -> Result<Vec<(String, Vec<u8>
         .collect()
 }
 
+#[cfg(target_os = "macos")]
+fn map_security_error(error: SecurityError) -> KeychainError {
+    KeychainError::KeychainFailure {
+        code: error.code(),
+        message: error.message(),
+    }
+}
+
+fn map_delete_secret_error(
+    namespace: &str,
+    env: &str,
+    code: i32,
+    message: Option<String>,
+) -> KeychainError {
+    if code == ERR_SEC_ITEM_NOT_FOUND {
+        KeychainError::SecretNotFound {
+            namespace: namespace.to_owned(),
+            env: env.to_owned(),
+        }
+    } else {
+        KeychainError::KeychainFailure { code, message }
+    }
+}
+
+fn keychain_service_name(namespace: &str) -> String {
+    format!("{}{}", KEYCHAIN_SERVICE_PREFIX, namespace)
+}
+
 fn invalid_keychain_data(message: impl Into<String>) -> KeychainError {
     io::Error::new(io::ErrorKind::InvalidData, message.into()).into()
 }
@@ -133,24 +132,15 @@ fn namespace_from_service(service: &str) -> Option<&str> {
         .filter(|namespace| !namespace.is_empty())
 }
 
-fn collect_namespaces<I, S>(services: I) -> Vec<String>
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<str>,
-{
-    services
-        .into_iter()
-        .filter_map(|service| namespace_from_service(service.as_ref()).map(str::to_owned))
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
-}
+fn collect_namespaces(mut services: Vec<String>) -> Vec<String> {
+    services.sort_unstable();
+    services.dedup();
 
-#[cfg(target_os = "macos")]
-fn service_from_search_result(result: &SearchResult) -> Option<String> {
-    result
-        .simplify_dict()
-        .and_then(|attributes| attributes.get("svce").cloned())
+    services
+        .iter()
+        .filter_map(|s| namespace_from_service(s))
+        .map(str::to_owned)
+        .collect()
 }
 
 #[cfg(target_os = "macos")]
@@ -198,15 +188,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    #[cfg(target_os = "macos")]
-    use super::is_item_not_found;
-    use std::collections::HashMap;
-
-    use super::{
-        ERR_SEC_ITEM_NOT_FOUND, collect_envs, collect_namespaces, env_from_attributes,
-        keychain_service_name, map_delete_secret_error, namespace_from_service,
-    };
-    use crate::KeychainError;
+    use super::*;
 
     #[test]
     fn prefixes_namespace_in_keychain_service_name() {
@@ -226,13 +208,13 @@ mod tests {
 
     #[test]
     fn collects_unique_namespaces_in_sorted_order() {
-        let namespaces = collect_namespaces([
-            "divechain-zsh",
-            "divechain-aws",
-            "divechain-github",
-            "divechain-aws",
-            "not-divechain-ignored",
-            "divechain-",
+        let namespaces = collect_namespaces(vec![
+            "divechain-zsh".to_owned(),
+            "divechain-aws".to_owned(),
+            "divechain-github".to_owned(),
+            "divechain-aws".to_owned(),
+            "not-divechain-ignored".to_owned(),
+            "divechain-".to_owned(),
         ]);
 
         assert_eq!(namespaces, vec!["aws", "github", "zsh"]);
@@ -275,13 +257,6 @@ mod tests {
             error.to_string(),
             "duplicate env name 'AWS_ACCESS_KEY_ID' found for service 'divechain-aws'"
         );
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn treats_item_not_found_as_empty_result() {
-        assert!(is_item_not_found(ERR_SEC_ITEM_NOT_FOUND));
-        assert!(!is_item_not_found(-1));
     }
 
     #[test]
