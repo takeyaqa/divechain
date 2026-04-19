@@ -56,7 +56,7 @@ fn main() {
     let cli = Cli::parse();
 
     if let Err(error) = run(cli) {
-        eprintln!("error: {error}");
+        eprintln!("error: {}", error);
         process::exit(1);
     }
 }
@@ -67,7 +67,7 @@ fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Commands::List => {
             for namespace in store.list_namespaces()? {
-                println!("{namespace}");
+                println!("{}", namespace);
             }
 
             Ok(())
