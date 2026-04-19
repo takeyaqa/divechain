@@ -1,10 +1,12 @@
 mod keychain;
 mod macos_keychain;
+mod server;
 
 use std::ffi::OsString;
 use std::io::{self, IsTerminal, Read};
 #[cfg(unix)]
 use std::os::unix::{ffi::OsStringExt, process::CommandExt};
+use std::path::PathBuf;
 use std::process::{self, Command};
 
 use crate::keychain::{KeychainError, KeychainStore, Result};
@@ -53,6 +55,12 @@ enum Commands {
         )]
         command: Vec<OsString>,
     },
+    /// Start a secret server over a Unix domain socket
+    Server {
+        /// The Unix domain socket path to bind
+        #[arg(long, required = true)]
+        socket_path: PathBuf,
+    },
 }
 
 fn main() {
@@ -81,6 +89,7 @@ fn run(cli: Cli) -> Result<()> {
         }
         Commands::Unset { namespace, env } => store.delete_secret(&namespace, &env),
         Commands::Exec { namespace, command } => exec_command(store, &namespace, command),
+        Commands::Server { socket_path } => server::run_server(store, &socket_path),
     }
 }
 
@@ -170,5 +179,23 @@ mod tests {
                 .expect("non-empty namespace should pass"),
             secrets
         );
+    }
+
+    #[test]
+    fn server_command_parses_socket_path() {
+        let cli = Cli::try_parse_from([
+            "divechain",
+            "server",
+            "--socket-path",
+            "/tmp/divechain.sock",
+        ])
+        .expect("server command should parse");
+
+        match cli.command {
+            Commands::Server { socket_path } => {
+                assert_eq!(socket_path, PathBuf::from("/tmp/divechain.sock"));
+            }
+            other => panic!("expected server command, got {:?}", other),
+        }
     }
 }

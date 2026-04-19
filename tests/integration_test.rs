@@ -70,11 +70,12 @@ fn help_lists_supported_subcommands() {
 Usage: divechain <COMMAND>
 
 Commands:
-  set    Set a secret for a namespace and environment variable name
-  list   List all namespaces
-  unset  Unset a secret for a namespace and environment variable name
-  exec   Execute a command with environment variables from a namespace
-  help   Print this message or the help of the given subcommand(s)
+  set     Set a secret for a namespace and environment variable name
+  list    List all namespaces
+  unset   Unset a secret for a namespace and environment variable name
+  exec    Execute a command with environment variables from a namespace
+  server  Start a secret server over a Unix domain socket
+  help    Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help     Print help
@@ -117,6 +118,14 @@ fn rejects_missing_env_for_unset() {
 fn rejects_missing_command_for_exec() {
     Command::new(cargo_bin("divechain"))
         .args(["exec", "aws"])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn rejects_missing_socket_path_for_server() {
+    Command::new(cargo_bin("divechain"))
+        .arg("server")
         .assert()
         .failure();
 }

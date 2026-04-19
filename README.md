@@ -50,6 +50,37 @@ Logged in to github.com account janedoe (...)
 
 `exec` searches for secrets with the specified `namespace`, loads every `env -> secret` pair stored under that namespace, adds them to the child process environment, and then replaces the current process with the requested command. If no secrets are found for the namespace, the command prints an error to standard error and exits with a non-zero status instead of running the command.
 
+### `server --socket-path <PATH>`
+
+To serve secrets to other processes on the same host over a Unix domain socket:
+
+```console
+$ divechain server --socket-path /tmp/divechain.sock
+listening on /tmp/divechain.sock
+```
+
+The server accepts one JSON request per connection, reads it to EOF, loads every secret stored under the requested namespace, writes one JSON response, and closes the connection.
+
+Request:
+
+```json
+{"namespace":"github"}
+```
+
+Successful response:
+
+```json
+{"secrets":[{"GITHUB_TOKEN":"secret-value"}]}
+```
+
+Error response:
+
+```json
+{"error":{"code":"namespace_not_found","message":"namespace 'github' does not exist"}}
+```
+
+This transport is synchronous and blocking. Clients should write a single JSON document, close the write side of the socket so the server sees EOF, then read the response. This is intended for environments such as containers that cannot access the macOS Keychain directly but can reach a Unix domain socket exposed by the host.
+
 ## Development
 
 On macOS, the runtime CLI targets the default user keychain.
