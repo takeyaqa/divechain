@@ -1,29 +1,60 @@
 use snapbox::cmd::{Command, cargo_bin};
 
 #[test]
-#[ignore = "Requires user input, not suitable for automated testing"]
-fn set_command_parses_namespace_and_env_name() {
+fn set_and_unset_command_parses_namespace_and_env_name() {
     Command::new(cargo_bin("divechain"))
-        .args(["set", "aws", "AWS_ACCESS_KEY_ID"])
+        .args(["set", "aws", "AWS_ENV"])
+        .assert()
+        .success();
+    Command::new(cargo_bin("divechain"))
+        .args(["unset", "aws", "AWS_ENV"])
         .assert()
         .success();
 }
 
 #[test]
-#[ignore = "Requires user input, not suitable for automated testing"]
 fn list_command_prints_namespaces() {
+    Command::new(cargo_bin("divechain"))
+        .args(["set", "rails", "RAILS_ENV"])
+        .assert()
+        .success();
+
+    Command::new(cargo_bin("divechain"))
+        .args(["set", "github", "GITHUB_ENV"])
+        .assert()
+        .success();
+
     Command::new(cargo_bin("divechain"))
         .arg("list")
         .assert()
-        .stdout_eq("")
+        .stdout_eq("github\nrails\n")
+        .success();
+
+    Command::new(cargo_bin("divechain"))
+        .args(["unset", "rails", "RAILS_ENV"])
+        .assert()
+        .success();
+
+    Command::new(cargo_bin("divechain"))
+        .args(["unset", "github", "GITHUB_ENV"])
+        .assert()
         .success();
 }
 
 #[test]
-#[ignore = "Requires user input, not suitable for automated testing"]
 fn exec_command_parses_namespace_and_command() {
     Command::new(cargo_bin("divechain"))
-        .args(["exec", "aws", "--", "printenv", "AWS_ACCESS_KEY_ID"])
+        .args(["set", "codex", "CODEX_ENV"])
+        .assert()
+        .success();
+
+    Command::new(cargo_bin("divechain"))
+        .args(["exec", "codex", "--", "printenv", "CODEX_ENV"])
+        .assert()
+        .success();
+
+    Command::new(cargo_bin("divechain"))
+        .args(["unset", "codex", "CODEX_ENV"])
         .assert()
         .success();
 }

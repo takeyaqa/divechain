@@ -12,5 +12,5 @@
 
 ## Validation
 
-- **Required Checks**: Run `cargo fmt --all --check`, `cargo build --locked --verbose`, and `cargo test --locked --verbose` before finishing substantial changes
+- **Required Checks**: Run `cargo fmt --all --check`, `cargo build --locked --verbose`, and `cargo test --locked --verbose -- --test-threads=1` before finishing substantial changes
 - **CI Environment**: CI runs on `macos-latest`, so macOS is the source of truth for runtime validation
