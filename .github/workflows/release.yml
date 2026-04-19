@@ -1,0 +1,47 @@
+name: release-build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - ubuntu-latest
+    env:
+      CARGO_TERM_COLOR: always
+      ARCHIVE_NAME: divechain-${{ matrix.os }}.tar.gz
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Rust
+        run: rustup override set stable
+
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build release binary
+        run: cargo build --release --locked --verbose
+
+      - name: Package release binary
+        run: tar -C target/release -czf "$ARCHIVE_NAME" divechain
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: divechain-${{ matrix.os }}
+          path: ${{ env.ARCHIVE_NAME }}
+          if-no-files-found: error
