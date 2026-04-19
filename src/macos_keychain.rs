@@ -50,14 +50,11 @@ pub(crate) fn list_namespaces() -> Result<Vec<String>> {
 
     let services: Vec<_> = results
         .iter()
-        .map(|result| {
+        .filter_map(|result| {
             result
                 .simplify_dict()
                 .and_then(|attributes| attributes.get("svce").cloned())
         })
-        .collect::<Vec<Option<String>>>()
-        .into_iter()
-        .flatten()
         .collect();
 
     Ok(collect_namespaces(services))
