@@ -62,4 +62,4 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
       - name: Test
-        run: cargo test --locked --verbose
+        run: cargo test --locked --verbose -- --test-threads=1
