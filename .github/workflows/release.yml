@@ -8,16 +8,26 @@ permissions:
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - macos-latest
-          - ubuntu-latest
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            artifact_name: divechain-linux-x64-gnu
+            archive_name: divechain-linux-x64-gnu.tar.gz
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            artifact_name: divechain-linux-arm64-gnu
+            archive_name: divechain-linux-arm64-gnu.tar.gz
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            artifact_name: divechain-macos-arm64
+            archive_name: divechain-macos-arm64.tar.gz
     env:
       CARGO_TERM_COLOR: always
-      ARCHIVE_NAME: divechain-${{ matrix.os }}.tar.gz
+      ARCHIVE_NAME: ${{ matrix.archive_name }}
     steps:
       - uses: actions/checkout@v6
 
@@ -29,19 +39,20 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-
             ${{ runner.os }}-cargo-
 
       - name: Build release binary
-        run: cargo build --release --locked --verbose
+        run: cargo build --release --locked --verbose --target "${{ matrix.target }}"
 
       - name: Package release binary
-        run: tar -C target/release -czf "$ARCHIVE_NAME" divechain
+        run: tar -C "target/${{ matrix.target }}/release" -czf "$ARCHIVE_NAME" divechain
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v7
         with:
-          name: divechain-${{ matrix.os }}
+          name: ${{ matrix.artifact_name }}
           path: ${{ env.ARCHIVE_NAME }}
           if-no-files-found: error
