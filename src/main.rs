@@ -1,11 +1,14 @@
+mod keychain;
+mod macos_keychain;
+
 use std::ffi::OsString;
 use std::io::{self, IsTerminal, Read};
 #[cfg(unix)]
 use std::os::unix::{ffi::OsStringExt, process::CommandExt};
 use std::process::{self, Command};
 
+use crate::keychain::{KeychainError, KeychainStore, Result};
 use clap::{Parser, Subcommand};
-use divechain::{KeychainError, KeychainStore, Result};
 
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
