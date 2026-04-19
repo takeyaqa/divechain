@@ -132,7 +132,7 @@ fn collect_secret(accounts: Vec<String>, service: &str) -> Result<Vec<(String, V
     accounts
         .into_iter()
         .map(|account| {
-            generic_password(PasswordOptions::new_generic_password(&service, &account))
+            generic_password(PasswordOptions::new_generic_password(service, &account))
                 .map(|secret| (account, secret))
                 .map_err(map_security_error)
         })
