@@ -18,17 +18,18 @@ impl fmt::Display for KeychainError {
                 if let Some(message) = message {
                     write!(
                         f,
-                        "keychain operation failed with OSStatus {code}: {message}"
+                        "keychain operation failed with OSStatus {}: {}",
+                        code, message
                     )
                 } else {
-                    write!(f, "keychain operation failed with OSStatus {code}")
+                    write!(f, "keychain operation failed with OSStatus {}", code)
                 }
             }
             Self::SecretNotFound { namespace, env } => {
-                write!(f, "secret '{namespace}.{env}' does not exist")
+                write!(f, "secret '{}.{}' does not exist", namespace, env)
             }
             Self::UnsupportedPlatform(platform) => {
-                write!(f, "macOS Keychain backend is unsupported on {platform}")
+                write!(f, "macOS Keychain backend is unsupported on {}", platform)
             }
             Self::Io(err) => err.fmt(f),
         }
@@ -142,7 +143,7 @@ mod tests {
             KeychainError::UnsupportedPlatform(platform) => {
                 assert_eq!(platform, std::env::consts::OS);
             }
-            other => panic!("expected unsupported platform, got {other:?}"),
+            other => panic!("expected unsupported platform, got {:?}", other),
         }
     }
 
@@ -157,7 +158,7 @@ mod tests {
             KeychainError::UnsupportedPlatform(platform) => {
                 assert_eq!(platform, std::env::consts::OS);
             }
-            other => panic!("expected unsupported platform, got {other:?}"),
+            other => panic!("expected unsupported platform, got {:?}", other),
         }
     }
 
@@ -172,7 +173,7 @@ mod tests {
             KeychainError::UnsupportedPlatform(platform) => {
                 assert_eq!(platform, std::env::consts::OS);
             }
-            other => panic!("expected unsupported platform, got {other:?}"),
+            other => panic!("expected unsupported platform, got {:?}", other),
         }
     }
 
@@ -187,7 +188,7 @@ mod tests {
             KeychainError::UnsupportedPlatform(platform) => {
                 assert_eq!(platform, std::env::consts::OS);
             }
-            other => panic!("expected unsupported platform, got {other:?}"),
+            other => panic!("expected unsupported platform, got {:?}", other),
         }
     }
 }
