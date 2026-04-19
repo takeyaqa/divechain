@@ -59,27 +59,26 @@ $ divechain server --socket-path /tmp/divechain.sock
 listening on /tmp/divechain.sock
 ```
 
-The server accepts one JSON request per connection, reads it to EOF, loads every secret stored under the requested namespace, writes one JSON response, and closes the connection.
+The server accepts one request per connection, reads it to EOF, loads every secret stored under the requested namespace, writes one response, and closes the connection. This transport is synchronous and blocking. It is intended for environments such as containers that cannot access the macOS Keychain directly but can reach a Unix domain socket exposed by the host.
 
-Request:
+### `client-exec <NAMESPACE> [--socket-path <PATH>] -- <COMMAND>...`
 
-```json
-{"namespace":"github"}
+To run a command with secrets fetched from a running `divechain server` instance:
+
+```console
+$ divechain client-exec github --socket-path /tmp/divechain.sock -- gh auth status
+Logged in to github.com account janedoe (...)
 ```
 
-Successful response:
+If `--socket-path` is omitted, `client-exec` falls back to the `DIVECHAIN_SOCKET_PATH` environment variable:
 
-```json
-{"secrets":[{"GITHUB_TOKEN":"secret-value"}]}
+```console
+$ export DIVECHAIN_SOCKET_PATH=/tmp/divechain.sock
+$ divechain client-exec github -- gh auth status
+Logged in to github.com account janedoe (...)
 ```
 
-Error response:
-
-```json
-{"error":{"code":"namespace_not_found","message":"namespace 'github' does not exist"}}
-```
-
-This transport is synchronous and blocking. Clients should write a single JSON document, close the write side of the socket so the server sees EOF, then read the response. This is intended for environments such as containers that cannot access the macOS Keychain directly but can reach a Unix domain socket exposed by the host.
+If both are set, `--socket-path` takes precedence. If the server returns an error for the requested namespace, `client-exec` prints the error and exits without running the command.
 
 ## Development
 

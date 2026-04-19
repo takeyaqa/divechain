@@ -1,13 +1,11 @@
-use std::collections::HashMap;
 use std::io::{self, Read, Write};
 use std::path::Path;
 
 #[cfg(unix)]
 use std::os::unix::net::UnixListener;
 
-use serde::{Deserialize, Serialize};
-
 use crate::keychain::{KeychainError, KeychainStore, Result};
+use crate::protocol::{ErrorBody, ErrorResponse, SecretRequest, SecretResponse, WireResponse};
 
 pub(crate) trait NamespaceSecretLoader {
     fn load_namespace_env(&self, namespace: &str) -> Result<Vec<(String, Vec<u8>)>>;
@@ -17,33 +15,6 @@ impl NamespaceSecretLoader for KeychainStore {
     fn load_namespace_env(&self, namespace: &str) -> Result<Vec<(String, Vec<u8>)>> {
         (*self).load_namespace_env(namespace)
     }
-}
-
-#[derive(Debug, Deserialize)]
-struct SecretRequest {
-    namespace: String,
-}
-
-#[derive(Debug, Serialize, PartialEq, Eq)]
-struct SecretResponse {
-    secrets: Vec<HashMap<String, String>>,
-}
-
-#[derive(Debug, Serialize, PartialEq, Eq)]
-struct ErrorResponse {
-    error: ErrorBody,
-}
-
-#[derive(Debug, Serialize, PartialEq, Eq)]
-struct ErrorBody {
-    code: &'static str,
-    message: String,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-enum Response {
-    Success(SecretResponse),
-    Error(ErrorResponse),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -98,14 +69,14 @@ where
     stream.read_to_end(&mut request_bytes)?;
 
     let response = process_request(loader, &request_bytes);
-    serde_json::to_writer(&mut *stream, &response.into_wire())?;
+    serde_json::to_writer(&mut *stream, &response)?;
     stream.flush()
 }
 
-fn process_request<L: NamespaceSecretLoader>(loader: &L, request_bytes: &[u8]) -> Response {
+fn process_request<L: NamespaceSecretLoader>(loader: &L, request_bytes: &[u8]) -> WireResponse {
     match parse_request(request_bytes).and_then(|request| load_response(loader, request)) {
-        Ok(response) => Response::Success(response),
-        Err(error) => Response::Error(error.into_response()),
+        Ok(response) => WireResponse::Success(response),
+        Err(error) => WireResponse::Error(error.into_response()),
     }
 }
 
@@ -138,13 +109,13 @@ fn decode_secret_entry(
     namespace: &str,
     env: String,
     secret: Vec<u8>,
-) -> std::result::Result<HashMap<String, String>, ServerError> {
+) -> std::result::Result<std::collections::HashMap<String, String>, ServerError> {
     let secret = String::from_utf8(secret).map_err(|_| ServerError::InvalidSecretEncoding {
         namespace: namespace.to_owned(),
         env: env.clone(),
     })?;
 
-    Ok(HashMap::from([(env, secret)]))
+    Ok(std::collections::HashMap::from([(env, secret)]))
 }
 
 fn map_keychain_error(error: KeychainError, namespace: &str) -> ServerError {
@@ -161,25 +132,25 @@ impl ServerError {
         match self {
             Self::InvalidRequest(message) => ErrorResponse {
                 error: ErrorBody {
-                    code: "invalid_request",
+                    code: "invalid_request".to_owned(),
                     message,
                 },
             },
             Self::NamespaceNotFound(namespace) => ErrorResponse {
                 error: ErrorBody {
-                    code: "namespace_not_found",
+                    code: "namespace_not_found".to_owned(),
                     message: format!("namespace '{}' does not exist", namespace),
                 },
             },
             Self::InvalidSecretEncoding { namespace, env } => ErrorResponse {
                 error: ErrorBody {
-                    code: "invalid_secret_encoding",
+                    code: "invalid_secret_encoding".to_owned(),
                     message: format!("secret '{}.{}' is not valid UTF-8", namespace, env),
                 },
             },
             Self::Internal(message) => ErrorResponse {
                 error: ErrorBody {
-                    code: "internal_error",
+                    code: "internal_error".to_owned(),
                     message,
                 },
             },
@@ -187,25 +158,10 @@ impl ServerError {
     }
 }
 
-impl Response {
-    fn into_wire(self) -> impl Serialize {
-        match self {
-            Self::Success(response) => WireResponse::Success(response),
-            Self::Error(response) => WireResponse::Error(response),
-        }
-    }
-}
-
-#[derive(Debug, Serialize)]
-#[serde(untagged)]
-enum WireResponse {
-    Success(SecretResponse),
-    Error(ErrorResponse),
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
     use std::fs;
     #[cfg(unix)]
     use std::net::Shutdown;
@@ -265,7 +221,7 @@ mod tests {
 
         assert_eq!(
             response,
-            Response::Success(SecretResponse {
+            WireResponse::Success(SecretResponse {
                 secrets: vec![
                     HashMap::from([("ENV_NAME".to_owned(), "secret-value".to_owned())]),
                     HashMap::from([("OTHER_ENV".to_owned(), "other-secret".to_owned())]),
@@ -282,9 +238,9 @@ mod tests {
 
         assert_eq!(
             response,
-            Response::Error(ErrorResponse {
+            WireResponse::Error(ErrorResponse {
                 error: ErrorBody {
-                    code: "namespace_not_found",
+                    code: "namespace_not_found".to_owned(),
                     message: "namespace 'github' does not exist".to_owned(),
                 },
             })
@@ -299,12 +255,12 @@ mod tests {
 
         assert!(matches!(
             response,
-            Response::Error(ErrorResponse {
+            WireResponse::Error(ErrorResponse {
                 error: ErrorBody {
-                    code: "invalid_request",
+                    code,
                     ..
                 },
-            })
+            }) if code == "invalid_request"
         ));
     }
 
@@ -318,9 +274,9 @@ mod tests {
 
         assert_eq!(
             response,
-            Response::Error(ErrorResponse {
+            WireResponse::Error(ErrorResponse {
                 error: ErrorBody {
-                    code: "invalid_secret_encoding",
+                    code: "invalid_secret_encoding".to_owned(),
                     message: "secret 'github.ENV_NAME' is not valid UTF-8".to_owned(),
                 },
             })

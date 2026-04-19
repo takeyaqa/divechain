@@ -1,5 +1,7 @@
+mod client;
 mod keychain;
 mod macos_keychain;
+mod protocol;
 mod server;
 
 use std::ffi::OsString;
@@ -55,6 +57,22 @@ enum Commands {
         )]
         command: Vec<OsString>,
     },
+    /// Execute a command with environment variables from a socket-based secret server
+    ClientExec {
+        /// The namespace to load environment variables from
+        #[arg(required = true)]
+        namespace: String,
+        /// The Unix domain socket path to connect to
+        #[arg(long)]
+        socket_path: Option<PathBuf>,
+        /// The command to execute with environment variables from the namespace
+        #[arg(
+            required = true,
+            num_args = 1..,
+            last = true
+        )]
+        command: Vec<OsString>,
+    },
     /// Start a secret server over a Unix domain socket
     Server {
         /// The Unix domain socket path to bind
@@ -89,26 +107,55 @@ fn run(cli: Cli) -> Result<()> {
         }
         Commands::Unset { namespace, env } => store.delete_secret(&namespace, &env),
         Commands::Exec { namespace, command } => exec_command(store, &namespace, command),
+        Commands::ClientExec {
+            namespace,
+            socket_path,
+            command,
+        } => client_exec_command(&namespace, socket_path.as_deref(), command),
         Commands::Server { socket_path } => server::run_server(store, &socket_path),
     }
 }
 
 #[cfg(unix)]
 fn exec_command(store: KeychainStore, namespace: &str, command: Vec<OsString>) -> Result<()> {
+    let envs = require_namespace_secrets(namespace, store.load_namespace_env(namespace)?)?
+        .into_iter()
+        .map(|(env, secret)| (env, OsString::from_vec(secret)));
+
+    exec_with_env(command, envs)
+}
+
+#[cfg(unix)]
+fn client_exec_command(
+    namespace: &str,
+    socket_path: Option<&std::path::Path>,
+    command: Vec<OsString>,
+) -> Result<()> {
+    let envs = client::load_namespace_env_from_socket(namespace, socket_path)?
+        .into_iter()
+        .map(|(env, secret)| (env, OsString::from(secret)));
+
+    exec_with_env(command, envs)
+}
+
+#[cfg(unix)]
+fn exec_with_env<I>(command: Vec<OsString>, envs: I) -> Result<()>
+where
+    I: IntoIterator<Item = (String, OsString)>,
+{
     let mut command = command.into_iter();
     let program = command.next().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
-            "exec requires a command to run",
+            "command execution requires a command to run",
         )
     })?;
 
     let mut process = Command::new(&program);
     process.args(command);
 
-    for (env, secret) in require_namespace_secrets(namespace, store.load_namespace_env(namespace)?)?
-    {
-        process.env(env, OsString::from_vec(secret));
+    for (env, secret) in envs {
+        process.env(env, secret);
     }
 
     Err(process.exec().into())
@@ -119,6 +166,19 @@ fn exec_command(_store: KeychainStore, _namespace: &str, _command: Vec<OsString>
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
         "exec is only supported on unix platforms",
+    )
+    .into())
+}
+
+#[cfg(not(unix))]
+fn client_exec_command(
+    _namespace: &str,
+    _socket_path: Option<&std::path::Path>,
+    _command: Vec<OsString>,
+) -> Result<()> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "client-exec is only supported on unix platforms",
     )
     .into())
 }
@@ -196,6 +256,33 @@ mod tests {
                 assert_eq!(socket_path, PathBuf::from("/tmp/divechain.sock"));
             }
             other => panic!("expected server command, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn client_exec_command_parses_socket_path() {
+        let cli = Cli::try_parse_from([
+            "divechain",
+            "client-exec",
+            "aws",
+            "--socket-path",
+            "/tmp/divechain.sock",
+            "--",
+            "env",
+        ])
+        .expect("client-exec command should parse");
+
+        match cli.command {
+            Commands::ClientExec {
+                namespace,
+                socket_path,
+                command,
+            } => {
+                assert_eq!(namespace, "aws");
+                assert_eq!(socket_path, Some(PathBuf::from("/tmp/divechain.sock")));
+                assert_eq!(command, vec![OsString::from("env")]);
+            }
+            other => panic!("expected client-exec command, got {:?}", other),
         }
     }
 }
