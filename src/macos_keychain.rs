@@ -106,6 +106,7 @@ fn namespace_from_service(service: &str) -> Option<&str> {
         .filter(|namespace| !namespace.is_empty())
 }
 
+#[cfg(target_os = "macos")]
 fn extract_attribute(search_results: Vec<SearchResult>, attribute: &str) -> Vec<String> {
     search_results
         .iter()
@@ -128,6 +129,7 @@ fn collect_namespaces(mut services: Vec<String>) -> Vec<String> {
         .collect()
 }
 
+#[cfg(target_os = "macos")]
 fn collect_secret(accounts: Vec<String>, service: &str) -> Result<Vec<(String, Vec<u8>)>> {
     accounts
         .into_iter()
