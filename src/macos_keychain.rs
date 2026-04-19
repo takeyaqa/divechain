@@ -135,12 +135,11 @@ fn namespace_from_service(service: &str) -> Option<&str> {
         .filter(|namespace| !namespace.is_empty())
 }
 
-fn collect_namespaces(services: Vec<String>) -> Vec<String> {
-    let mut cloned = services.clone();
-    cloned.sort_unstable();
-    cloned.dedup();
+fn collect_namespaces(mut services: Vec<String>) -> Vec<String> {
+    services.sort_unstable();
+    services.dedup();
 
-    cloned
+    services
         .iter()
         .map(|s| namespace_from_service(s))
         .flatten()
