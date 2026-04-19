@@ -138,8 +138,7 @@ fn collect_namespaces(mut services: Vec<String>) -> Vec<String> {
 
     services
         .iter()
-        .map(|s| namespace_from_service(s))
-        .flatten()
+        .filter_map(|s| namespace_from_service(s))
         .map(str::to_owned)
         .collect()
 }
