@@ -6,6 +6,7 @@ pub type Result<T> = std::result::Result<T, KeychainError>;
 #[derive(Debug)]
 pub enum KeychainError {
     KeychainFailure { code: i32, message: Option<String> },
+    NamespaceNotFound { namespace: String },
     SecretNotFound { namespace: String, env: String },
     UnsupportedPlatform(&'static str),
     Io(io::Error),
@@ -24,6 +25,9 @@ impl fmt::Display for KeychainError {
                 } else {
                     write!(f, "keychain operation failed with OSStatus {}", code)
                 }
+            }
+            Self::NamespaceNotFound { namespace } => {
+                write!(f, "namespace '{}' does not exist", namespace)
             }
             Self::SecretNotFound { namespace, env } => {
                 write!(f, "secret '{}.{}' does not exist", namespace, env)
@@ -122,9 +126,17 @@ mod backend {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(not(target_os = "macos"))]
     use super::KeychainError;
     use super::KeychainStore;
+
+    #[test]
+    fn namespace_not_found_error_formats_cleanly() {
+        let error = KeychainError::NamespaceNotFound {
+            namespace: "aws".to_owned(),
+        };
+
+        assert_eq!(error.to_string(), "namespace 'aws' does not exist");
+    }
 
     #[cfg(target_os = "macos")]
     #[test]
