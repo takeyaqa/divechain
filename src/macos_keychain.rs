@@ -1,6 +1,3 @@
-use std::collections::{BTreeSet, HashMap};
-use std::io;
-
 use crate::keychain::{KeychainError, Result};
 
 #[cfg(target_os = "macos")]
@@ -9,7 +6,7 @@ use security_framework::base::Error as SecurityError;
 use security_framework::item::{ItemClass, ItemSearchOptions, Limit, SearchResult};
 #[cfg(target_os = "macos")]
 use security_framework::passwords::{
-    PasswordOptions, delete_generic_password, get_generic_password, set_generic_password_options,
+    PasswordOptions, delete_generic_password, generic_password, set_generic_password_options,
 };
 
 const KEYCHAIN_SERVICE_PREFIX: &str = "divechain-";
@@ -48,14 +45,7 @@ pub(crate) fn list_namespaces() -> Result<Vec<String>> {
         Err(error) => return Err(map_security_error(error)),
     };
 
-    let services: Vec<_> = results
-        .iter()
-        .filter_map(|result| {
-            result
-                .simplify_dict()
-                .and_then(|attributes| attributes.get("svce").cloned())
-        })
-        .collect();
+    let services: Vec<_> = extract_attribute(results, "svce");
 
     Ok(collect_namespaces(services))
 }
@@ -77,21 +67,9 @@ pub(crate) fn load_namespace_env(namespace: &str) -> Result<Vec<(String, Vec<u8>
         Err(error) => return Err(map_security_error(error)),
     };
 
-    let envs = collect_envs(
-        results
-            .iter()
-            .map(|result| attributes_from_search_result(result, &service))
-            .collect::<Result<Vec<_>>>()?,
-        &service,
-    )?;
+    let accounts: Vec<_> = extract_attribute(results, "acct");
 
-    envs.into_iter()
-        .map(|env| {
-            get_generic_password(&service, &env)
-                .map(|secret| (env, secret))
-                .map_err(map_security_error)
-        })
-        .collect()
+    collect_secret(accounts, &service)
 }
 
 #[cfg(target_os = "macos")]
@@ -122,14 +100,22 @@ fn keychain_service_name(namespace: &str) -> String {
     format!("{}{}", KEYCHAIN_SERVICE_PREFIX, namespace)
 }
 
-fn invalid_keychain_data(message: impl Into<String>) -> KeychainError {
-    io::Error::new(io::ErrorKind::InvalidData, message.into()).into()
-}
-
 fn namespace_from_service(service: &str) -> Option<&str> {
     service
         .strip_prefix(KEYCHAIN_SERVICE_PREFIX)
         .filter(|namespace| !namespace.is_empty())
+}
+
+#[cfg(target_os = "macos")]
+fn extract_attribute(search_results: Vec<SearchResult>, attribute: &str) -> Vec<String> {
+    search_results
+        .iter()
+        .filter_map(|result| {
+            result
+                .simplify_dict()
+                .and_then(|attributes| attributes.get(attribute).cloned())
+        })
+        .collect()
 }
 
 fn collect_namespaces(mut services: Vec<String>) -> Vec<String> {
@@ -144,46 +130,15 @@ fn collect_namespaces(mut services: Vec<String>) -> Vec<String> {
 }
 
 #[cfg(target_os = "macos")]
-fn attributes_from_search_result(
-    result: &SearchResult,
-    service: &str,
-) -> Result<HashMap<String, String>> {
-    result.simplify_dict().ok_or_else(|| {
-        invalid_keychain_data(format!(
-            "keychain search result for service '{service}' is missing attributes"
-        ))
-    })
-}
-
-fn env_from_attributes(attributes: &HashMap<String, String>, service: &str) -> Result<String> {
-    match attributes.get("acct") {
-        Some(env) if !env.is_empty() => Ok(env.clone()),
-        Some(_) => Err(invalid_keychain_data(format!(
-            "keychain item for service '{service}' has an empty env name"
-        ))),
-        None => Err(invalid_keychain_data(format!(
-            "keychain item for service '{service}' is missing an env name"
-        ))),
-    }
-}
-
-fn collect_envs<I>(attribute_sets: I, service: &str) -> Result<Vec<String>>
-where
-    I: IntoIterator<Item = HashMap<String, String>>,
-{
-    let mut envs = BTreeSet::new();
-
-    for attributes in attribute_sets {
-        let env = env_from_attributes(&attributes, service)?;
-
-        if !envs.insert(env.clone()) {
-            return Err(invalid_keychain_data(format!(
-                "duplicate env name '{env}' found for service '{service}'"
-            )));
-        }
-    }
-
-    Ok(envs.into_iter().collect())
+fn collect_secret(accounts: Vec<String>, service: &str) -> Result<Vec<(String, Vec<u8>)>> {
+    accounts
+        .into_iter()
+        .map(|account| {
+            generic_password(PasswordOptions::new_generic_password(service, &account))
+                .map(|secret| (account, secret))
+                .map_err(map_security_error)
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -218,45 +173,6 @@ mod tests {
         ]);
 
         assert_eq!(namespaces, vec!["aws", "github", "zsh"]);
-    }
-
-    #[test]
-    fn extracts_env_name_from_attributes() {
-        let env = env_from_attributes(
-            &HashMap::from([("acct".to_owned(), "AWS_ACCESS_KEY_ID".to_owned())]),
-            "divechain-aws",
-        )
-        .expect("acct attribute should be converted into an env name");
-
-        assert_eq!(env, "AWS_ACCESS_KEY_ID");
-    }
-
-    #[test]
-    fn rejects_missing_env_name_in_attributes() {
-        let error = env_from_attributes(&HashMap::new(), "divechain-aws")
-            .expect_err("missing acct should be rejected");
-
-        assert_eq!(
-            error.to_string(),
-            "keychain item for service 'divechain-aws' is missing an env name"
-        );
-    }
-
-    #[test]
-    fn rejects_duplicate_env_names() {
-        let error = collect_envs(
-            [
-                HashMap::from([("acct".to_owned(), "AWS_ACCESS_KEY_ID".to_owned())]),
-                HashMap::from([("acct".to_owned(), "AWS_ACCESS_KEY_ID".to_owned())]),
-            ],
-            "divechain-aws",
-        )
-        .expect_err("duplicate env names should be rejected");
-
-        assert_eq!(
-            error.to_string(),
-            "duplicate env name 'AWS_ACCESS_KEY_ID' found for service 'divechain-aws'"
-        );
     }
 
     #[test]
