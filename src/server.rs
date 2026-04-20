@@ -1,8 +1,13 @@
+use std::fs;
 use std::io::{self, Read, Write};
 use std::path::Path;
 
 #[cfg(unix)]
+use std::os::unix::fs::FileTypeExt;
+#[cfg(unix)]
 use std::os::unix::net::UnixListener;
+#[cfg(unix)]
+use std::os::unix::net::UnixStream;
 
 use crate::keychain::{KeychainError, KeychainStore, Result};
 use crate::protocol::{ErrorBody, ErrorResponse, SecretRequest, SecretResponse, WireResponse};
@@ -50,11 +55,32 @@ pub(crate) fn run_server<L: NamespaceSecretLoader>(_loader: L, _socket_path: &Pa
 
 #[cfg(unix)]
 fn bind_listener(socket_path: &Path) -> io::Result<UnixListener> {
-    if socket_path.exists() {
-        return Err(io::Error::new(
-            io::ErrorKind::AlreadyExists,
-            format!("socket path '{}' already exists", socket_path.display()),
-        ));
+    match fs::symlink_metadata(socket_path) {
+        Ok(metadata) => {
+            let file_type = metadata.file_type();
+
+            if file_type.is_symlink() || !file_type.is_socket() {
+                return Err(io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    format!("socket path '{}' already exists", socket_path.display()),
+                ));
+            }
+
+            match UnixStream::connect(socket_path) {
+                Ok(_) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::AlreadyExists,
+                        format!("socket path '{}' is already in use", socket_path.display()),
+                    ));
+                }
+                Err(error) if error.kind() == io::ErrorKind::ConnectionRefused => {
+                    fs::remove_file(socket_path)?;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
     }
 
     UnixListener::bind(socket_path)
@@ -162,9 +188,10 @@ impl ServerError {
 mod tests {
     use super::*;
     use std::collections::HashMap;
-    use std::fs;
     #[cfg(unix)]
     use std::net::Shutdown;
+    #[cfg(unix)]
+    use std::os::unix::fs::symlink;
     #[cfg(unix)]
     use std::os::unix::net::UnixStream;
     #[cfg(unix)]
@@ -318,7 +345,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn bind_listener_rejects_existing_socket_path() {
+    fn bind_listener_rejects_existing_non_socket_path() {
         let socket_path = unique_socket_path();
         fs::write(&socket_path, []).expect("placeholder should be created");
 
@@ -326,6 +353,52 @@ mod tests {
         fs::remove_file(&socket_path).expect("placeholder should be removed");
 
         assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bind_listener_reuses_stale_socket_path() {
+        let socket_path = unique_socket_path();
+        let listener = bind_listener(&socket_path).expect("listener should bind");
+
+        drop(listener);
+
+        let rebound = bind_listener(&socket_path).expect("stale socket path should rebind");
+        drop(rebound);
+        fs::remove_file(&socket_path).expect("socket file should be removed");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bind_listener_rejects_active_socket_path() {
+        let socket_path = unique_socket_path();
+        let listener = bind_listener(&socket_path).expect("listener should bind");
+
+        let error = bind_listener(&socket_path).expect_err("active socket path should fail");
+        let client = UnixStream::connect(&socket_path).expect("active socket should remain usable");
+
+        drop(client);
+        drop(listener);
+        fs::remove_file(&socket_path).expect("socket file should be removed");
+
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bind_listener_rejects_symlink_socket_path() {
+        let target_path = unique_socket_path();
+        let symlink_path = unique_socket_path();
+        fs::write(&target_path, []).expect("target placeholder should be created");
+        symlink(&target_path, &symlink_path).expect("symlink should be created");
+
+        let error = bind_listener(&symlink_path).expect_err("symlink path should fail");
+
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+        assert!(symlink_path.exists(), "symlink should not be removed");
+
+        fs::remove_file(&symlink_path).expect("symlink should be removed");
+        fs::remove_file(&target_path).expect("target placeholder should be removed");
     }
 
     #[cfg(unix)]

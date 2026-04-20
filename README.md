@@ -60,6 +60,7 @@ listening on /tmp/divechain.sock
 ```
 
 The server accepts one request per connection, reads it to EOF, loads every secret stored under the requested namespace, writes one response, and closes the connection. This transport is synchronous and blocking. It is intended for environments such as containers that cannot access the macOS Keychain directly but can reach a Unix domain socket exposed by the host.
+If the socket path already exists and is a stale Unix socket left behind by a previous server instance, `server` removes it and binds successfully. Active socket listeners and non-socket filesystem entries still cause the command to fail.
 
 ### `client-exec <NAMESPACE> [--socket-path <PATH>] -- <COMMAND>...`
 
