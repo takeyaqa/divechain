@@ -100,7 +100,10 @@ where
 }
 
 fn process_request<L: NamespaceSecretLoader>(loader: &L, request_bytes: &[u8]) -> WireResponse {
-    match parse_request(request_bytes).and_then(|request| load_response(loader, request)) {
+    match parse_request(request_bytes).and_then(|request| {
+        eprintln!("{}", request_log_message(&request));
+        load_response(loader, request)
+    }) {
         Ok(response) => WireResponse::Success(response),
         Err(error) => WireResponse::Error(error.into_response()),
     }
@@ -109,6 +112,10 @@ fn process_request<L: NamespaceSecretLoader>(loader: &L, request_bytes: &[u8]) -
 fn parse_request(request_bytes: &[u8]) -> std::result::Result<SecretRequest, ServerError> {
     serde_json::from_slice(request_bytes)
         .map_err(|error| ServerError::InvalidRequest(format!("invalid request payload: {}", error)))
+}
+
+fn request_log_message(request: &SecretRequest) -> String {
+    format!("received request for namespace '{}'", request.namespace)
 }
 
 fn load_response<L: NamespaceSecretLoader>(
@@ -307,6 +314,18 @@ mod tests {
                     message: "secret 'github.ENV_NAME' is not valid UTF-8".to_owned(),
                 },
             })
+        );
+    }
+
+    #[test]
+    fn request_log_message_includes_namespace() {
+        let request = SecretRequest {
+            namespace: "github".to_owned(),
+        };
+
+        assert_eq!(
+            request_log_message(&request),
+            "received request for namespace 'github'"
         );
     }
 
