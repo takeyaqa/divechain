@@ -11,7 +11,7 @@ use std::os::unix::{ffi::OsStringExt, process::CommandExt};
 use std::path::PathBuf;
 use std::process::{self, Command};
 
-use crate::secret_store::{Result, SecretStore, SecretStoreError};
+use crate::secret_store::{Result, SecretStore};
 use clap::{Parser, Subcommand};
 
 #[derive(Debug, Parser)]
@@ -118,7 +118,8 @@ fn run(cli: Cli) -> Result<()> {
 
 #[cfg(unix)]
 fn exec_command(store: SecretStore, namespace: &str, command: Vec<OsString>) -> Result<()> {
-    let envs = require_namespace_secrets(namespace, store.load_namespace_env(namespace)?)?
+    let envs = store
+        .load_namespace_env(namespace)?
         .into_iter()
         .map(|(env, secret)| (env, OsString::from_vec(secret)));
 
@@ -194,19 +195,6 @@ fn read_secret(namespace: &str, env: &str) -> Result<String> {
     Ok(secret.trim().to_string())
 }
 
-fn require_namespace_secrets(
-    namespace: &str,
-    secrets: Vec<(String, Vec<u8>)>,
-) -> Result<Vec<(String, Vec<u8>)>> {
-    if secrets.is_empty() {
-        Err(SecretStoreError::NamespaceNotFound {
-            namespace: namespace.to_owned(),
-        })
-    } else {
-        Ok(secrets)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -215,30 +203,6 @@ mod tests {
     fn verify_cli() {
         use clap::CommandFactory;
         Cli::command().debug_assert();
-    }
-
-    #[test]
-    fn require_namespace_secrets_rejects_empty_namespace() {
-        let error = require_namespace_secrets("aws", vec![])
-            .expect_err("empty namespace secret list should fail");
-
-        match error {
-            SecretStoreError::NamespaceNotFound { namespace } => {
-                assert_eq!(namespace, "aws");
-            }
-            other => panic!("expected namespace not found error, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn require_namespace_secrets_accepts_non_empty_namespace() {
-        let secrets = vec![("AWS_ACCESS_KEY_ID".to_owned(), b"secret".to_vec())];
-
-        assert_eq!(
-            require_namespace_secrets("aws", secrets.clone())
-                .expect("non-empty namespace should pass"),
-            secrets
-        );
     }
 
     #[test]

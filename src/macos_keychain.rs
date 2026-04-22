@@ -63,11 +63,16 @@ pub(crate) fn load_namespace_env(namespace: &str) -> Result<Vec<(String, Vec<u8>
 
     let results = match options.search() {
         Ok(results) => results,
-        Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => return Ok(vec![]),
-        Err(error) => return Err(map_security_error(error)),
+        Err(error) => {
+            return Err(map_load_namespace_error(
+                namespace,
+                error.code(),
+                error.message(),
+            ));
+        }
     };
 
-    let accounts: Vec<_> = extract_attribute(results, "acct");
+    let accounts = require_namespace_accounts(namespace, extract_attribute(results, "acct"))?;
 
     collect_secret(accounts, &service)
 }
@@ -77,6 +82,18 @@ fn map_security_error(error: SecurityError) -> SecretStoreError {
     SecretStoreError::BackendFailure {
         code: error.code(),
         message: error.message(),
+    }
+}
+
+fn map_load_namespace_error(
+    namespace: &str,
+    code: i32,
+    message: Option<String>,
+) -> SecretStoreError {
+    if code == ERR_SEC_ITEM_NOT_FOUND {
+        namespace_not_found(namespace)
+    } else {
+        SecretStoreError::BackendFailure { code, message }
     }
 }
 
@@ -93,6 +110,20 @@ fn map_delete_secret_error(
         }
     } else {
         SecretStoreError::BackendFailure { code, message }
+    }
+}
+
+fn require_namespace_accounts(namespace: &str, accounts: Vec<String>) -> Result<Vec<String>> {
+    if accounts.is_empty() {
+        Err(namespace_not_found(namespace))
+    } else {
+        Ok(accounts)
+    }
+}
+
+fn namespace_not_found(namespace: &str) -> SecretStoreError {
+    SecretStoreError::NamespaceNotFound {
+        namespace: namespace.to_owned(),
     }
 }
 
@@ -187,6 +218,42 @@ mod tests {
             }
             _ => panic!("expected missing secret error variant"),
         }
+    }
+
+    #[test]
+    fn converts_missing_namespace_lookup_into_domain_error() {
+        let error = map_load_namespace_error("aws", ERR_SEC_ITEM_NOT_FOUND, None);
+
+        match error {
+            SecretStoreError::NamespaceNotFound { namespace } => {
+                assert_eq!(namespace, "aws");
+            }
+            _ => panic!("expected missing namespace error variant"),
+        }
+    }
+
+    #[test]
+    fn rejects_empty_namespace_accounts() {
+        let error = require_namespace_accounts("aws", vec![])
+            .expect_err("empty namespace accounts should fail");
+
+        match error {
+            SecretStoreError::NamespaceNotFound { namespace } => {
+                assert_eq!(namespace, "aws");
+            }
+            _ => panic!("expected missing namespace error variant"),
+        }
+    }
+
+    #[test]
+    fn accepts_non_empty_namespace_accounts() {
+        let accounts = vec!["AWS_ACCESS_KEY_ID".to_owned()];
+
+        assert_eq!(
+            require_namespace_accounts("aws", accounts.clone())
+                .expect("non-empty namespace accounts should pass"),
+            accounts
+        );
     }
 
     #[test]
