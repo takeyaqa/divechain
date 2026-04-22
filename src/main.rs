@@ -11,7 +11,8 @@ use std::os::unix::{ffi::OsStringExt, process::CommandExt};
 use std::path::PathBuf;
 use std::process::{self, Command};
 
-use crate::secret_store::{Result, SecretStore};
+use crate::secret_store::SecretStore;
+use anyhow::{Result, anyhow};
 use clap::{Parser, Subcommand};
 
 #[derive(Debug, Parser)]
@@ -103,16 +104,23 @@ fn run(cli: Cli) -> Result<()> {
         }
         Commands::Set { namespace, env } => {
             let secret = read_secret(&namespace, &env)?;
-            store.save_secret(&namespace, &env, secret.as_bytes())
+            store.save_secret(&namespace, &env, secret.as_bytes())?;
+            Ok(())
         }
-        Commands::Unset { namespace, env } => store.delete_secret(&namespace, &env),
+        Commands::Unset { namespace, env } => {
+            store.delete_secret(&namespace, &env)?;
+            Ok(())
+        }
         Commands::Exec { namespace, command } => exec_command(store, &namespace, command),
         Commands::ClientExec {
             namespace,
             socket_path,
             command,
         } => client_exec_command(&namespace, socket_path.as_deref(), command),
-        Commands::Server { socket_path } => server::run_server(store, &socket_path),
+        Commands::Server { socket_path } => {
+            server::run_server(store, &socket_path)?;
+            Ok(())
+        }
     }
 }
 
@@ -145,12 +153,10 @@ where
     I: IntoIterator<Item = (String, OsString)>,
 {
     let mut command = command.into_iter();
-    let program = command.next().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "command execution requires a command to run",
-        )
-    })?;
+    let program = match command.next() {
+        Some(program) => program,
+        None => return Err(anyhow!("command execution requires a command to run")),
+    };
 
     let mut process = Command::new(&program);
     process.args(command);
@@ -164,11 +170,7 @@ where
 
 #[cfg(not(unix))]
 fn exec_command(_store: SecretStore, _namespace: &str, _command: Vec<OsString>) -> Result<()> {
-    Err(io::Error::new(
-        io::ErrorKind::Unsupported,
-        "exec is only supported on unix platforms",
-    )
-    .into())
+    Err(anyhow!("exec is only supported on unix platforms"))
 }
 
 #[cfg(not(unix))]
@@ -177,11 +179,7 @@ fn client_exec_command(
     _socket_path: Option<&std::path::Path>,
     _command: Vec<OsString>,
 ) -> Result<()> {
-    Err(io::Error::new(
-        io::ErrorKind::Unsupported,
-        "client-exec is only supported on unix platforms",
-    )
-    .into())
+    Err(anyhow!("client-exec is only supported on unix platforms"))
 }
 
 fn read_secret(namespace: &str, env: &str) -> Result<String> {
