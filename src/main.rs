@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::process::{self, Command};
 
 use crate::secret_store::SecretStore;
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use clap::{Parser, Subcommand};
 
 #[derive(Debug, Parser)]
@@ -153,12 +153,10 @@ where
     I: IntoIterator<Item = (String, OsString)>,
 {
     let mut command = command.into_iter();
-    let program = command.next().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "command execution requires a command to run",
-        )
-    })?;
+    let program = match command.next() {
+        Some(program) => program,
+        None => return Err(anyhow!("command execution requires a command to run")),
+    };
 
     let mut process = Command::new(&program);
     process.args(command);
@@ -172,11 +170,7 @@ where
 
 #[cfg(not(unix))]
 fn exec_command(_store: SecretStore, _namespace: &str, _command: Vec<OsString>) -> Result<()> {
-    Err(io::Error::new(
-        io::ErrorKind::Unsupported,
-        "exec is only supported on unix platforms",
-    )
-    .into())
+    Err(anyhow!("exec is only supported on unix platforms"))
 }
 
 #[cfg(not(unix))]
@@ -185,11 +179,7 @@ fn client_exec_command(
     _socket_path: Option<&std::path::Path>,
     _command: Vec<OsString>,
 ) -> Result<()> {
-    Err(io::Error::new(
-        io::ErrorKind::Unsupported,
-        "client-exec is only supported on unix platforms",
-    )
-    .into())
+    Err(anyhow!("client-exec is only supported on unix platforms"))
 }
 
 fn read_secret(namespace: &str, env: &str) -> Result<String> {
