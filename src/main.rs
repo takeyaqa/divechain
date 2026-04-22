@@ -11,7 +11,8 @@ use std::os::unix::{ffi::OsStringExt, process::CommandExt};
 use std::path::PathBuf;
 use std::process::{self, Command};
 
-use crate::secret_store::{Result, SecretStore};
+use crate::secret_store::SecretStore;
+use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 #[derive(Debug, Parser)]
@@ -103,16 +104,23 @@ fn run(cli: Cli) -> Result<()> {
         }
         Commands::Set { namespace, env } => {
             let secret = read_secret(&namespace, &env)?;
-            store.save_secret(&namespace, &env, secret.as_bytes())
+            store.save_secret(&namespace, &env, secret.as_bytes())?;
+            Ok(())
         }
-        Commands::Unset { namespace, env } => store.delete_secret(&namespace, &env),
+        Commands::Unset { namespace, env } => {
+            store.delete_secret(&namespace, &env)?;
+            Ok(())
+        }
         Commands::Exec { namespace, command } => exec_command(store, &namespace, command),
         Commands::ClientExec {
             namespace,
             socket_path,
             command,
         } => client_exec_command(&namespace, socket_path.as_deref(), command),
-        Commands::Server { socket_path } => server::run_server(store, &socket_path),
+        Commands::Server { socket_path } => {
+            server::run_server(store, &socket_path)?;
+            Ok(())
+        }
     }
 }
 
