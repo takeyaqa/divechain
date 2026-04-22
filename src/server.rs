@@ -9,14 +9,14 @@ use std::os::unix::net::UnixListener;
 #[cfg(unix)]
 use std::os::unix::net::UnixStream;
 
-use crate::keychain::{KeychainError, KeychainStore, Result};
 use crate::protocol::{ErrorBody, ErrorResponse, SecretRequest, SecretResponse, WireResponse};
+use crate::secret_store::{Result, SecretStore, SecretStoreError};
 
 pub(crate) trait NamespaceSecretLoader {
     fn load_namespace_env(&self, namespace: &str) -> Result<Vec<(String, Vec<u8>)>>;
 }
 
-impl NamespaceSecretLoader for KeychainStore {
+impl NamespaceSecretLoader for SecretStore {
     fn load_namespace_env(&self, namespace: &str) -> Result<Vec<(String, Vec<u8>)>> {
         (*self).load_namespace_env(namespace)
     }
@@ -124,7 +124,7 @@ fn load_response<L: NamespaceSecretLoader>(
 ) -> std::result::Result<SecretResponse, ServerError> {
     let secrets = loader
         .load_namespace_env(&request.namespace)
-        .map_err(|error| map_keychain_error(error, &request.namespace))?;
+        .map_err(|error| map_secret_store_error(error, &request.namespace))?;
 
     if secrets.is_empty() {
         return Err(ServerError::NamespaceNotFound(request.namespace));
@@ -151,9 +151,9 @@ fn decode_secret_entry(
     Ok(std::collections::HashMap::from([(env, secret)]))
 }
 
-fn map_keychain_error(error: KeychainError, namespace: &str) -> ServerError {
+fn map_secret_store_error(error: SecretStoreError, namespace: &str) -> ServerError {
     match error {
-        KeychainError::NamespaceNotFound { .. } => {
+        SecretStoreError::NamespaceNotFound { .. } => {
             ServerError::NamespaceNotFound(namespace.to_owned())
         }
         other => ServerError::Internal(other.to_string()),
@@ -214,27 +214,27 @@ mod tests {
         fn load_namespace_env(&self, _namespace: &str) -> Result<Vec<(String, Vec<u8>)>> {
             match &self.result {
                 Ok(secrets) => Ok(secrets.clone()),
-                Err(KeychainError::NamespaceNotFound { namespace }) => {
-                    Err(KeychainError::NamespaceNotFound {
+                Err(SecretStoreError::NamespaceNotFound { namespace }) => {
+                    Err(SecretStoreError::NamespaceNotFound {
                         namespace: namespace.clone(),
                     })
                 }
-                Err(KeychainError::SecretNotFound { namespace, env }) => {
-                    Err(KeychainError::SecretNotFound {
+                Err(SecretStoreError::SecretNotFound { namespace, env }) => {
+                    Err(SecretStoreError::SecretNotFound {
                         namespace: namespace.clone(),
                         env: env.clone(),
                     })
                 }
-                Err(KeychainError::KeychainFailure { code, message }) => {
-                    Err(KeychainError::KeychainFailure {
+                Err(SecretStoreError::BackendFailure { code, message }) => {
+                    Err(SecretStoreError::BackendFailure {
                         code: *code,
                         message: message.clone(),
                     })
                 }
-                Err(KeychainError::UnsupportedPlatform(platform)) => {
-                    Err(KeychainError::UnsupportedPlatform(platform))
+                Err(SecretStoreError::UnsupportedPlatform(platform)) => {
+                    Err(SecretStoreError::UnsupportedPlatform(platform))
                 }
-                Err(KeychainError::Io(error)) => Err(KeychainError::Io(io::Error::new(
+                Err(SecretStoreError::Io(error)) => Err(SecretStoreError::Io(io::Error::new(
                     error.kind(),
                     error.to_string(),
                 ))),

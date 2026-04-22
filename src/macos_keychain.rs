@@ -1,4 +1,4 @@
-use crate::keychain::{KeychainError, Result};
+use crate::secret_store::{Result, SecretStoreError};
 
 #[cfg(target_os = "macos")]
 use security_framework::base::Error as SecurityError;
@@ -73,8 +73,8 @@ pub(crate) fn load_namespace_env(namespace: &str) -> Result<Vec<(String, Vec<u8>
 }
 
 #[cfg(target_os = "macos")]
-fn map_security_error(error: SecurityError) -> KeychainError {
-    KeychainError::KeychainFailure {
+fn map_security_error(error: SecurityError) -> SecretStoreError {
+    SecretStoreError::BackendFailure {
         code: error.code(),
         message: error.message(),
     }
@@ -85,14 +85,14 @@ fn map_delete_secret_error(
     env: &str,
     code: i32,
     message: Option<String>,
-) -> KeychainError {
+) -> SecretStoreError {
     if code == ERR_SEC_ITEM_NOT_FOUND {
-        KeychainError::SecretNotFound {
+        SecretStoreError::SecretNotFound {
             namespace: namespace.to_owned(),
             env: env.to_owned(),
         }
     } else {
-        KeychainError::KeychainFailure { code, message }
+        SecretStoreError::BackendFailure { code, message }
     }
 }
 
@@ -181,7 +181,7 @@ mod tests {
             map_delete_secret_error("aws", "AWS_ACCESS_KEY_ID", ERR_SEC_ITEM_NOT_FOUND, None);
 
         match error {
-            KeychainError::SecretNotFound { namespace, env } => {
+            SecretStoreError::SecretNotFound { namespace, env } => {
                 assert_eq!(namespace, "aws");
                 assert_eq!(env, "AWS_ACCESS_KEY_ID");
             }
@@ -195,7 +195,7 @@ mod tests {
             map_delete_secret_error("aws", "AWS_ACCESS_KEY_ID", -1, Some("boom".to_owned()));
 
         match error {
-            KeychainError::KeychainFailure { code, message } => {
+            SecretStoreError::BackendFailure { code, message } => {
                 assert_eq!(code, -1);
                 assert_eq!(message.as_deref(), Some("boom"));
             }

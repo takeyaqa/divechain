@@ -1,7 +1,7 @@
 mod client;
-mod keychain;
 mod macos_keychain;
 mod protocol;
+mod secret_store;
 mod server;
 
 use std::ffi::OsString;
@@ -11,7 +11,7 @@ use std::os::unix::{ffi::OsStringExt, process::CommandExt};
 use std::path::PathBuf;
 use std::process::{self, Command};
 
-use crate::keychain::{KeychainError, KeychainStore, Result};
+use crate::secret_store::{Result, SecretStore, SecretStoreError};
 use clap::{Parser, Subcommand};
 
 #[derive(Debug, Parser)]
@@ -91,7 +91,7 @@ fn main() {
 }
 
 fn run(cli: Cli) -> Result<()> {
-    let store = KeychainStore::new();
+    let store = SecretStore::new();
 
     match cli.command {
         Commands::List => {
@@ -117,7 +117,7 @@ fn run(cli: Cli) -> Result<()> {
 }
 
 #[cfg(unix)]
-fn exec_command(store: KeychainStore, namespace: &str, command: Vec<OsString>) -> Result<()> {
+fn exec_command(store: SecretStore, namespace: &str, command: Vec<OsString>) -> Result<()> {
     let envs = require_namespace_secrets(namespace, store.load_namespace_env(namespace)?)?
         .into_iter()
         .map(|(env, secret)| (env, OsString::from_vec(secret)));
@@ -162,7 +162,7 @@ where
 }
 
 #[cfg(not(unix))]
-fn exec_command(_store: KeychainStore, _namespace: &str, _command: Vec<OsString>) -> Result<()> {
+fn exec_command(_store: SecretStore, _namespace: &str, _command: Vec<OsString>) -> Result<()> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
         "exec is only supported on unix platforms",
@@ -199,7 +199,7 @@ fn require_namespace_secrets(
     secrets: Vec<(String, Vec<u8>)>,
 ) -> Result<Vec<(String, Vec<u8>)>> {
     if secrets.is_empty() {
-        Err(KeychainError::NamespaceNotFound {
+        Err(SecretStoreError::NamespaceNotFound {
             namespace: namespace.to_owned(),
         })
     } else {
@@ -223,7 +223,7 @@ mod tests {
             .expect_err("empty namespace secret list should fail");
 
         match error {
-            KeychainError::NamespaceNotFound { namespace } => {
+            SecretStoreError::NamespaceNotFound { namespace } => {
                 assert_eq!(namespace, "aws");
             }
             other => panic!("expected namespace not found error, got {:?}", other),

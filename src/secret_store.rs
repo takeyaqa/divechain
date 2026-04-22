@@ -1,21 +1,21 @@
 use std::fmt;
 use std::io;
 
-pub type Result<T> = std::result::Result<T, KeychainError>;
+pub type Result<T> = std::result::Result<T, SecretStoreError>;
 
 #[derive(Debug)]
-pub enum KeychainError {
-    KeychainFailure { code: i32, message: Option<String> },
+pub enum SecretStoreError {
+    BackendFailure { code: i32, message: Option<String> },
     NamespaceNotFound { namespace: String },
     SecretNotFound { namespace: String, env: String },
     UnsupportedPlatform(&'static str),
     Io(io::Error),
 }
 
-impl fmt::Display for KeychainError {
+impl fmt::Display for SecretStoreError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::KeychainFailure { code, message } => {
+            Self::BackendFailure { code, message } => {
                 if let Some(message) = message {
                     write!(
                         f,
@@ -40,7 +40,7 @@ impl fmt::Display for KeychainError {
     }
 }
 
-impl std::error::Error for KeychainError {
+impl std::error::Error for SecretStoreError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Io(err) => Some(err),
@@ -49,16 +49,16 @@ impl std::error::Error for KeychainError {
     }
 }
 
-impl From<io::Error> for KeychainError {
+impl From<io::Error> for SecretStoreError {
     fn from(value: io::Error) -> Self {
         Self::Io(value)
     }
 }
 
 #[derive(Debug, Default, Clone, Copy)]
-pub struct KeychainStore;
+pub struct SecretStore;
 
-impl KeychainStore {
+impl SecretStore {
     pub fn new() -> Self {
         Self
     }
@@ -105,33 +105,33 @@ mod backend {
 
 #[cfg(not(target_os = "macos"))]
 mod backend {
-    use super::{KeychainError, Result};
+    use super::{Result, SecretStoreError};
 
     pub(super) fn save_secret(_namespace: &str, _env: &str, _secret: &[u8]) -> Result<()> {
-        Err(KeychainError::UnsupportedPlatform(std::env::consts::OS))
+        Err(SecretStoreError::UnsupportedPlatform(std::env::consts::OS))
     }
 
     pub(super) fn delete_secret(_namespace: &str, _env: &str) -> Result<()> {
-        Err(KeychainError::UnsupportedPlatform(std::env::consts::OS))
+        Err(SecretStoreError::UnsupportedPlatform(std::env::consts::OS))
     }
 
     pub(super) fn list_namespaces() -> Result<Vec<String>> {
-        Err(KeychainError::UnsupportedPlatform(std::env::consts::OS))
+        Err(SecretStoreError::UnsupportedPlatform(std::env::consts::OS))
     }
 
     pub(super) fn load_namespace_env(_namespace: &str) -> Result<Vec<(String, Vec<u8>)>> {
-        Err(KeychainError::UnsupportedPlatform(std::env::consts::OS))
+        Err(SecretStoreError::UnsupportedPlatform(std::env::consts::OS))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::KeychainError;
-    use super::KeychainStore;
+    use super::SecretStore;
+    use super::SecretStoreError;
 
     #[test]
     fn namespace_not_found_error_formats_cleanly() {
-        let error = KeychainError::NamespaceNotFound {
+        let error = SecretStoreError::NamespaceNotFound {
             namespace: "aws".to_owned(),
         };
 
@@ -141,18 +141,18 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn store_is_constructible() {
-        let _ = KeychainStore::new();
+        let _ = SecretStore::new();
     }
 
     #[cfg(not(target_os = "macos"))]
     #[test]
     fn backend_is_disabled_outside_macos() {
-        let error = KeychainStore::new()
+        let error = SecretStore::new()
             .save_secret("namespace", "ENV_NAME", b"secret")
             .expect_err("non-mac targets should reject keychain access");
 
         match error {
-            KeychainError::UnsupportedPlatform(platform) => {
+            SecretStoreError::UnsupportedPlatform(platform) => {
                 assert_eq!(platform, std::env::consts::OS);
             }
             other => panic!("expected unsupported platform, got {:?}", other),
@@ -162,12 +162,12 @@ mod tests {
     #[cfg(not(target_os = "macos"))]
     #[test]
     fn list_namespaces_is_disabled_outside_macos() {
-        let error = KeychainStore::new()
+        let error = SecretStore::new()
             .list_namespaces()
             .expect_err("non-mac targets should reject keychain access");
 
         match error {
-            KeychainError::UnsupportedPlatform(platform) => {
+            SecretStoreError::UnsupportedPlatform(platform) => {
                 assert_eq!(platform, std::env::consts::OS);
             }
             other => panic!("expected unsupported platform, got {:?}", other),
@@ -177,12 +177,12 @@ mod tests {
     #[cfg(not(target_os = "macos"))]
     #[test]
     fn load_namespace_env_is_disabled_outside_macos() {
-        let error = KeychainStore::new()
+        let error = SecretStore::new()
             .load_namespace_env("namespace")
             .expect_err("non-mac targets should reject keychain access");
 
         match error {
-            KeychainError::UnsupportedPlatform(platform) => {
+            SecretStoreError::UnsupportedPlatform(platform) => {
                 assert_eq!(platform, std::env::consts::OS);
             }
             other => panic!("expected unsupported platform, got {:?}", other),
@@ -192,12 +192,12 @@ mod tests {
     #[cfg(not(target_os = "macos"))]
     #[test]
     fn delete_secret_is_disabled_outside_macos() {
-        let error = KeychainStore::new()
+        let error = SecretStore::new()
             .delete_secret("namespace", "ENV_NAME")
             .expect_err("non-mac targets should reject keychain access");
 
         match error {
-            KeychainError::UnsupportedPlatform(platform) => {
+            SecretStoreError::UnsupportedPlatform(platform) => {
                 assert_eq!(platform, std::env::consts::OS);
             }
             other => panic!("expected unsupported platform, got {:?}", other),
