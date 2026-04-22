@@ -8,8 +8,8 @@ use std::net::Shutdown;
 #[cfg(unix)]
 use std::os::unix::net::UnixStream;
 
-use crate::keychain::Result;
 use crate::protocol::{SecretRequest, SecretResponse, WireResponse};
+use crate::secret_store::Result;
 
 #[cfg(unix)]
 pub(crate) fn load_namespace_env_from_socket(
