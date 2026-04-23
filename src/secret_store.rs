@@ -1,58 +1,21 @@
-use std::fmt;
 use std::io;
+
+use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, SecretStoreError>;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum SecretStoreError {
+    #[error("keychain operation failed with OSStatus {}: {}", code, message.as_deref().unwrap_or("no message"))]
     BackendFailure { code: i32, message: Option<String> },
+    #[error("namespace '{}' does not exist", namespace)]
     NamespaceNotFound { namespace: String },
+    #[error("secret '{}.{}' does not exist", namespace, env)]
     SecretNotFound { namespace: String, env: String },
+    #[error("macOS Keychain backend is unsupported on {}", .0)]
     UnsupportedPlatform(&'static str),
-    Io(io::Error),
-}
-
-impl fmt::Display for SecretStoreError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::BackendFailure { code, message } => {
-                if let Some(message) = message {
-                    write!(
-                        f,
-                        "keychain operation failed with OSStatus {}: {}",
-                        code, message
-                    )
-                } else {
-                    write!(f, "keychain operation failed with OSStatus {}", code)
-                }
-            }
-            Self::NamespaceNotFound { namespace } => {
-                write!(f, "namespace '{}' does not exist", namespace)
-            }
-            Self::SecretNotFound { namespace, env } => {
-                write!(f, "secret '{}.{}' does not exist", namespace, env)
-            }
-            Self::UnsupportedPlatform(platform) => {
-                write!(f, "macOS Keychain backend is unsupported on {}", platform)
-            }
-            Self::Io(err) => err.fmt(f),
-        }
-    }
-}
-
-impl std::error::Error for SecretStoreError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Io(err) => Some(err),
-            _ => None,
-        }
-    }
-}
-
-impl From<io::Error> for SecretStoreError {
-    fn from(value: io::Error) -> Self {
-        Self::Io(value)
-    }
+    #[error(transparent)]
+    Io(#[from] io::Error),
 }
 
 #[derive(Debug, Default, Clone, Copy)]
