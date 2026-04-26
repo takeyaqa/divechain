@@ -9,59 +9,67 @@ use snapbox::cmd::{Command, cargo_bin};
 
 #[test]
 fn set_and_unset_command_parses_namespace_and_env_name() {
+    let namespace = unique_namespace("set-unset");
+
     Command::new(cargo_bin("divechain"))
-        .args(["set", "aws", "AWS_ENV"])
+        .args(["set", &namespace, "AWS_ENV"])
         .assert()
         .success();
     Command::new(cargo_bin("divechain"))
-        .args(["unset", "aws", "AWS_ENV"])
+        .args(["unset", &namespace, "AWS_ENV"])
         .assert()
         .success();
 }
 
 #[test]
 fn list_command_prints_namespaces() {
+    let namespace_sufix = unique_namespace("list");
+    let rails_namespace = format!("rails-{}", namespace_sufix);
+    let github_namespace = format!("github-{}", namespace_sufix);
+
     Command::new(cargo_bin("divechain"))
-        .args(["set", "rails", "RAILS_ENV"])
+        .args(["set", &rails_namespace, "RAILS_ENV"])
         .assert()
         .success();
 
     Command::new(cargo_bin("divechain"))
-        .args(["set", "github", "GITHUB_ENV"])
+        .args(["set", &github_namespace, "GITHUB_ENV"])
         .assert()
         .success();
 
     Command::new(cargo_bin("divechain"))
         .arg("list")
         .assert()
-        .stdout_eq("github\nrails\n")
+        .stdout_eq(format!("{}\n{}\n", github_namespace, rails_namespace))
         .success();
 
     Command::new(cargo_bin("divechain"))
-        .args(["unset", "rails", "RAILS_ENV"])
+        .args(["unset", &rails_namespace, "RAILS_ENV"])
         .assert()
         .success();
 
     Command::new(cargo_bin("divechain"))
-        .args(["unset", "github", "GITHUB_ENV"])
+        .args(["unset", &github_namespace, "GITHUB_ENV"])
         .assert()
         .success();
 }
 
 #[test]
 fn exec_command_parses_namespace_and_command() {
+    let namespace = unique_namespace("exec");
+
     Command::new(cargo_bin("divechain"))
-        .args(["set", "codex", "CODEX_ENV"])
+        .args(["set", &namespace, "CODEX_ENV"])
         .assert()
         .success();
 
     Command::new(cargo_bin("divechain"))
-        .args(["exec", "codex", "--", "printenv", "CODEX_ENV"])
+        .args(["exec", &namespace, "--", "printenv", "CODEX_ENV"])
         .assert()
         .success();
 
     Command::new(cargo_bin("divechain"))
-        .args(["unset", "codex", "CODEX_ENV"])
+        .args(["unset", &namespace, "CODEX_ENV"])
         .assert()
         .success();
 }
@@ -273,6 +281,15 @@ fn unique_socket_path() -> PathBuf {
 
 fn unique_marker_path() -> PathBuf {
     unique_temp_path("marker")
+}
+
+fn unique_namespace(label: &str) -> String {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock should be valid")
+        .as_nanos();
+
+    format!("divechain-test-{}-{}-{}", label, std::process::id(), nonce)
 }
 
 fn unique_temp_path(extension: &str) -> PathBuf {
