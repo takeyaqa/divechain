@@ -2,13 +2,10 @@ use std::fs;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use snapbox::cmd::{Command, cargo_bin};
-
-static UNIQUE_ID: AtomicU64 = AtomicU64::new(0);
 
 #[test]
 fn set_and_unset_command_parses_namespace_and_env_name() {
@@ -26,9 +23,9 @@ fn set_and_unset_command_parses_namespace_and_env_name() {
 
 #[test]
 fn list_command_prints_namespaces() {
-    let namespace_prefix = unique_namespace("list");
-    let rails_namespace = format!("{namespace_prefix}-rails");
-    let github_namespace = format!("{namespace_prefix}-github");
+    let namespace_sufix = unique_namespace("list");
+    let rails_namespace = format!("rails-{}", namespace_sufix);
+    let github_namespace = format!("github-{}", namespace_sufix);
 
     Command::new(cargo_bin("divechain"))
         .args(["set", &rails_namespace, "RAILS_ENV"])
@@ -40,14 +37,10 @@ fn list_command_prints_namespaces() {
         .assert()
         .success();
 
-    Command::new("/bin/sh")
-        .arg("-c")
-        .arg(r#""$1" list | awk -v prefix="$2" 'index($0, prefix) == 1 { print }'"#)
-        .arg("sh")
-        .arg(cargo_bin("divechain"))
-        .arg(&namespace_prefix)
+    Command::new(cargo_bin("divechain"))
+        .arg("list")
         .assert()
-        .stdout_eq(format!("{github_namespace}\n{rails_namespace}\n"))
+        .stdout_eq(format!("{}\n{}\n", github_namespace, rails_namespace))
         .success();
 
     Command::new(cargo_bin("divechain"))
@@ -295,15 +288,8 @@ fn unique_namespace(label: &str) -> String {
         .duration_since(UNIX_EPOCH)
         .expect("system clock should be valid")
         .as_nanos();
-    let sequence = UNIQUE_ID.fetch_add(1, Ordering::Relaxed);
 
-    format!(
-        "divechain-test-{}-{}-{}-{}",
-        label,
-        std::process::id(),
-        nonce,
-        sequence
-    )
+    format!("divechain-test-{}-{}-{}", label, std::process::id(), nonce)
 }
 
 fn unique_temp_path(extension: &str) -> PathBuf {
